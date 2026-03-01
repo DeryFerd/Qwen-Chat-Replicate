@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Qwen Chat</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&display=swap"
+        rel="stylesheet">
+    <!-- Phosphor Icons for high-quality SVG icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <a href="#" class="logo-link">
+                    <!-- Temporary placeholder for the logo, user should replace logo.png -->
+                    <img src="./logo.png" alt="Qwen Logo" class="brand-logo"
+                        onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'32\' height=\'32\' fill=\'none\' viewBox=\'0 0 32 32\'><path fill=\'%236366F1\' d=\'M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28zm0 25.2A11.2 11.2 0 1 1 27.2 16 11.2 11.2 0 0 1 16 27.2z\'/></svg>'">
+                    <span class="brand-name">Qwen</span>
+                </a>
+            </div>
+
+            <button class="new-chat-btn">
+                <i class="ph ph-plus"></i>
+                <span>New Chat</span>
+            </button>
+
+            <div class="sidebar-content">
+                <div class="history-section">
+                    <h3 class="section-title">Yesterday</h3>
+                    <ul class="history-list">
+                        <li>
+                            <a href="#" class="history-item">
+                                <i class="ph ph-chat-teardrop-text"></i>
+                                <span class="truncate">Python script optimization</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#" class="history-item">
+                                <i class="ph ph-chat-teardrop-text"></i>
+                                <span class="truncate">Explain quantum computing</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="history-section">
+                    <h3 class="section-title">Previous 7 Days</h3>
+                    <ul class="history-list">
+                        <li>
+                            <a href="#" class="history-item">
+                                <i class="ph ph-chat-teardrop-text"></i>
+                                <span class="truncate">React vs Vue performance</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#" class="history-item">
+                                <i class="ph ph-chat-teardrop-text"></i>
+                                <span class="truncate">Write a professional email</span>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <button class="user-profile-btn">
+                    <div class="avatar">U</div>
+                    <span class="username">User</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="chat-header">
+                <button class="icon-btn sidebar-toggle-btn" id="sidebar-toggle-btn" title="Toggle Sidebar">
+                    <i class="ph ph-sidebar-simple"></i>
+                </button>
+                <div class="model-selector" id="model-selector">
+                    <div class="model-selector-btn">
+                        <span class="model-name">Qwen-Max</span>
+                        <i class="ph ph-caret-down"></i>
+                    </div>
+                    <!-- Dropdown Template for Backend -->
+                    <div class="model-dropdown" id="model-dropdown">
+                        <div class="model-option active" data-model="qwen-max">
+                            <i class="ph ph-sparkle"></i> Qwen-Max
+                        </div>
+                        <div class="model-option" data-model="qwen-plus">
+                            <i class="ph ph-star"></i> Qwen-Plus
+                        </div>
+                        <div class="model-option" data-model="qwen-turbo">
+                            <i class="ph ph-lightning"></i> Qwen-Turbo
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Chat Area -->
+            <div class="chat-area" id="chat-area">
+                <div class="welcome-screen" id="welcome-screen">
+                    <div class="welcome-logo-container">
+                        <img src="./logo.png" alt="Qwen" class="welcome-logo"
+                            onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'64\' height=\'64\' fill=\'none\' viewBox=\'0 0 32 32\'><path fill=\'%236366F1\' d=\'M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28zm0 25.2A11.2 11.2 0 1 1 27.2 16 11.2 11.2 0 0 1 16 27.2z\'/></svg>'">
+                    </div>
+                    <h1 class="welcome-title">Hi, I'm Qwen</h1>
+                    <p class="welcome-subtitle">How can I help you today?</p>
+
+                    <div class="suggestion-grid">
+                        <button class="suggestion-card">
+                            <i class="ph ph-pencil-simple suggestions-icon"></i>
+                            <div class="suggestion-text">
+                                <span class="suggestion-title">Draft an email</span>
+                                <span class="suggestion-desc">asking for a project update</span>
+                            </div>
+                        </button>
+                        <button class="suggestion-card">
+                            <i class="ph ph-code suggestions-icon"></i>
+                            <div class="suggestion-text">
+                                <span class="suggestion-title">Write Python code</span>
+                                <span class="suggestion-desc">to scrape a simple website</span>
+                            </div>
+                        </button>
+                        <button class="suggestion-card">
+                            <i class="ph ph-lightbulb suggestions-icon"></i>
+                            <div class="suggestion-text">
+                                <span class="suggestion-title">Brainstorm ideas</span>
+                                <span class="suggestion-desc">for a sci-fi short story</span>
+                            </div>
+                        </button>
+                        <button class="suggestion-card">
+                            <i class="ph ph-book-open suggestions-icon"></i>
+                            <div class="suggestion-text">
+                                <span class="suggestion-title">Summarize</span>
+                                <span class="suggestion-desc">the plot of inception</span>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="messages-container" id="messages-container">
+                    <!-- Dynamic messages will be appended here -->
+                </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="input-wrapper">
+                <div class="input-container">
+                    <button class="attach-btn" title="Attach File">
+                        <i class="ph ph-paperclip"></i>
+                    </button>
+                    <textarea id="chat-input" placeholder="Message Qwen..." rows="1" class="chat-input"></textarea>
+                    <div class="input-actions">
+                        <button class="voice-btn" title="Voice Input">
+                            <i class="ph ph-microphone"></i>
+                        </button>
+                        <button class="send-btn" id="send-btn" disabled>
+                            <i class="ph ph-paper-plane-right"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="footer-disclaimer">
+                    AI can make mistakes. Consider verifying important information.
+                </div>
+            </div>
+        </main>
+        <!-- Delete Confirmation Modal -->
+        <div class="modal-overlay" id="delete-modal">
+            <div class="modal-content">
+                <h3>Delete Chat</h3>
+                <p>Do you want to delete this chat?</p>
+                <div class="modal-actions">
+                    <button class="modal-cancel-btn" id="cancel-delete-btn">Cancel</button>
+                    <button class="modal-delete-btn" id="confirm-delete-btn">Delete</button>
+                </div>
+            </div>
+        </div>
+
+        <script src="script.js"></script>
+</body>
+
+</html>
