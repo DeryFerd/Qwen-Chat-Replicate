@@ -120,7 +120,7 @@ ul {
 
 .brand-name {
     font-weight: 600;
-    font-size: 16px;
+    font-size: 18px;
     letter-spacing: -0.01em;
 }
 
@@ -132,7 +132,7 @@ ul {
     justify-content: center;
     border-radius: var(--radius-sm);
     color: var(--text-secondary);
-    font-size: 20px;
+    font-size: 22px;
 }
 
 .icon-btn:hover {
@@ -150,7 +150,7 @@ ul {
     padding: 12px 16px;
     border-radius: var(--radius-lg);
     font-weight: 500;
-    font-size: 14px;
+    font-size: 16px;
     border: 1px solid var(--border-color);
 }
 
@@ -160,7 +160,7 @@ ul {
 }
 
 .new-chat-btn i {
-    font-size: 18px;
+    font-size: 20px;
 }
 
 .sidebar-content {
@@ -183,7 +183,7 @@ ul {
 }
 
 .section-title {
-    font-size: 12px;
+    font-size: 14px;
     color: var(--text-muted);
     font-weight: 500;
     padding: 0 12px 8px;
@@ -198,14 +198,14 @@ ul {
     padding: 10px 12px;
     border-radius: var(--radius-md);
     color: var(--text-secondary);
-    font-size: 14px;
+    font-size: 16px;
     position: relative;
     width: 100%;
     margin-bottom: 4px;
 }
 
 .history-item i:first-child {
-    font-size: 16px;
+    font-size: 18px;
     flex-shrink: 0;
 }
 
@@ -223,7 +223,7 @@ ul {
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-muted);
-    font-size: 18px;
+    font-size: 20px;
     background-color: var(--bg-surface);
     border: none;
     padding: 4px;
@@ -269,7 +269,7 @@ ul {
     gap: 10px;
     padding: 8px 10px;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: 15px;
     border-radius: var(--radius-sm);
     cursor: pointer;
     background: none;
@@ -279,7 +279,7 @@ ul {
 }
 
 .chat-option-item i {
-    font-size: 16px;
+    font-size: 18px;
 }
 
 .chat-option-item.download-group {
@@ -297,7 +297,7 @@ ul {
 
 .download-label i.ph-caret-right {
     margin-left: auto;
-    font-size: 14px;
+    font-size: 16px;
     display: block;
 }
 
@@ -330,7 +330,7 @@ ul {
     color: var(--text-secondary);
     border-radius: var(--radius-sm);
     padding: 8px 10px;
-    font-size: 13px;
+    font-size: 15px;
     cursor: pointer;
     transition: all var(--transition);
     text-align: left;
@@ -340,7 +340,7 @@ ul {
 }
 
 .download-actions button i {
-    font-size: 16px;
+    font-size: 18px;
 }
 
 .download-actions button:hover {
@@ -395,13 +395,13 @@ ul {
     align-items: center;
     justify-content: center;
     font-weight: 600;
-    font-size: 14px;
+    font-size: 16px;
 }
 
 .username {
     flex: 1;
     text-align: left;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 500;
 }
 
@@ -444,7 +444,7 @@ ul {
     border-radius: var(--radius-md);
     cursor: pointer;
     font-weight: 600;
-    font-size: 16px;
+    font-size: 18px;
     transition: background-color var(--transition);
 }
 
@@ -499,13 +499,13 @@ ul {
     border-radius: var(--radius-sm);
     color: var(--text-secondary);
     cursor: pointer;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 500;
     transition: all var(--transition);
 }
 
 .model-option i {
-    font-size: 18px;
+    font-size: 20px;
 }
 
 .model-option:hover {
@@ -574,7 +574,7 @@ ul {
 }
 
 .welcome-title {
-    font-size: 28px;
+    font-size: 30px;
     font-weight: 600;
     margin-bottom: 4px;
     /* Reduced vertical spacing */
@@ -583,7 +583,7 @@ ul {
 
 .welcome-subtitle {
     color: var(--text-secondary);
-    font-size: 16px;
+    font-size: 18px;
     margin-bottom: 16px;
     /* Reduced vertical spacing */
 }
@@ -616,7 +616,7 @@ ul {
 }
 
 .suggestions-icon {
-    font-size: 24px;
+    font-size: 26px;
     color: var(--accent);
     margin-bottom: 12px;
 }
@@ -630,12 +630,12 @@ ul {
 .suggestion-title {
     font-weight: 500;
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: 16px;
 }
 
 .suggestion-desc {
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: 15px;
 }
 
 /* Messages */
@@ -682,7 +682,7 @@ ul {
     align-items: center;
     justify-content: center;
     font-weight: 600;
-    font-size: 14px;
+    font-size: 16px;
 }
 
 .message.user .message-avatar {
@@ -715,7 +715,7 @@ ul {
 .message-bubble {
     padding: 12px 16px;
     border-radius: var(--radius-lg);
-    font-size: 15px;
+    font-size: 17px;
     line-height: 1.6;
     word-break: break-word;
 }
@@ -771,7 +771,7 @@ ul {
     border: none;
     color: var(--text-primary);
     font-family: inherit;
-    font-size: 15px;
+    font-size: 17px;
     resize: none;
     max-height: 200px;
     overflow-y: auto;
@@ -800,7 +800,7 @@ ul {
 .attach-btn,
 .voice-btn {
     color: var(--text-muted);
-    font-size: 20px;
+    font-size: 22px;
     padding: 8px;
     border-radius: var(--radius-md);
     flex-shrink: 0;
@@ -828,7 +828,7 @@ ul {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
+    font-size: 18px;
     flex-shrink: 0;
     border-radius: var(--radius-round);
 }
@@ -839,7 +839,7 @@ ul {
 }
 
 .footer-disclaimer {
-    font-size: 12px;
+    font-size: 14px;
     color: var(--text-muted);
     margin-top: 12px;
     text-align: center;
@@ -885,14 +885,14 @@ ul {
 
 .modal-content h3 {
     margin-bottom: 8px;
-    font-size: 18px;
+    font-size: 20px;
     color: var(--text-primary);
 }
 
 .modal-content p {
     color: var(--text-secondary);
     margin-bottom: 24px;
-    font-size: 14px;
+    font-size: 16px;
 }
 
 .modal-actions {
@@ -948,7 +948,7 @@ ul {
     }
 
     .welcome-title {
-        font-size: 24px;
+        font-size: 26px;
     }
 
     .input-wrapper {
