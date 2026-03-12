@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const modelSelector = document.getElementById('model-selector');
     const modelOptions = document.querySelectorAll('.model-option');
     const modelNameDisplay = document.querySelector('.model-selector-btn .model-name');
+    const modelLogoDisplay = document.getElementById('selected-model-logo');
 
     if (modelSelector) {
         modelSelector.addEventListener('click', (e) => {
@@ -49,6 +50,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+    function syncSelectedModelDisplay(option) {
+        if (!option) return;
+
+        modelNameDisplay.textContent = option.getAttribute('data-label') || option.textContent.trim();
+
+        const optionLogo = option.querySelector('.model-option-logo');
+        if (modelLogoDisplay && optionLogo) {
+            modelLogoDisplay.src = optionLogo.getAttribute('src');
+            modelLogoDisplay.alt = optionLogo.getAttribute('alt');
+        }
+    }
+
+    syncSelectedModelDisplay(document.querySelector('.model-option.active'));
 
     modelOptions.forEach(option => {
         option.addEventListener('click', () => {
@@ -56,10 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
             modelOptions.forEach(opt => opt.classList.remove('active'));
             // Add active class to clicked
             option.classList.add('active');
-
-            // Update display text (trim to just text node without icon)
-            const text = option.textContent.trim();
-            modelNameDisplay.textContent = text;
+            syncSelectedModelDisplay(option);
 
             // Close dropdown
             modelSelector.classList.remove('open');

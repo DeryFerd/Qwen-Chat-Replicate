@@ -85,28 +85,37 @@
                 </button>
                 <div class="model-selector" id="model-selector">
                     <div class="model-selector-btn">
-                        <span class="model-name">Qwen-Max</span>
+                        <span class="selected-model-display">
+                            <img src="./assets/models/qwen.png" alt="Qwen" class="selected-model-logo" id="selected-model-logo">
+                            <span class="model-name">Qwen3.5 397B</span>
+                        </span>
                         <i class="ph ph-caret-down"></i>
                     </div>
                     <!-- Dropdown Template for Backend -->
                     <div class="model-dropdown" id="model-dropdown">
-                        <div class="model-option active" data-model="qwen3.5:397b-cloud">
-                            <i class="ph ph-sparkle"></i> Qwen3.5 397B
+                        <div class="model-option active" data-model="qwen3.5:397b-cloud" data-label="Qwen3.5 397B">
+                            <img src="./assets/models/qwen.png" alt="Qwen" class="model-option-logo">
+                            <span class="model-option-label">Qwen3.5 397B</span>
                         </div>
-                        <div class="model-option" data-model="minimax-m2.5:cloud">
-                            <i class="ph ph-star"></i> MiniMax M2.5
+                        <div class="model-option" data-model="minimax-m2.5:cloud" data-label="MiniMax M2.5">
+                            <img src="./assets/models/minimax.ico" alt="MiniMax" class="model-option-logo">
+                            <span class="model-option-label">MiniMax M2.5</span>
                         </div>
-                        <div class="model-option" data-model="glm-5:cloud">
-                            <i class="ph ph-lightning"></i> GLM-5
+                        <div class="model-option" data-model="glm-5:cloud" data-label="GLM-5">
+                            <img src="./assets/models/glm.svg" alt="GLM" class="model-option-logo">
+                            <span class="model-option-label">GLM-5</span>
                         </div>
-                        <div class="model-option" data-model="qwen3-coder-next:cloud">
-                            <i class="ph ph-code"></i> Qwen3 Coder
+                        <div class="model-option" data-model="qwen3-coder-next:cloud" data-label="Qwen3 Coder">
+                            <img src="./assets/models/qwen.png" alt="Qwen" class="model-option-logo">
+                            <span class="model-option-label">Qwen3 Coder</span>
                         </div>
-                        <div class="model-option" data-model="qwen3-vl:235b-instruct-cloud">
-                            <i class="ph ph-eye"></i> Qwen3 VL
+                        <div class="model-option" data-model="qwen3-vl:235b-instruct-cloud" data-label="Qwen3 VL">
+                            <img src="./assets/models/qwen.png" alt="Qwen" class="model-option-logo">
+                            <span class="model-option-label">Qwen3 VL</span>
                         </div>
-                        <div class="model-option" data-model="kimi-k2.5:cloud">
-                            <i class="ph ph-moon"></i> Kimi K2.5
+                        <div class="model-option" data-model="kimi-k2.5:cloud" data-label="Kimi K2.5">
+                            <img src="./assets/models/kimi.ico" alt="Kimi" class="model-option-logo">
+                            <span class="model-option-label">Kimi K2.5</span>
                         </div>
                     </div>
                 </div>
