@@ -453,7 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
 
         try {
-            const response = await fetch('https://ollama.com/api/chat', {
+            const response = await fetch('https://ollama.run/api/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
