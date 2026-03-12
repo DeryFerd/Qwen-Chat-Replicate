@@ -623,7 +623,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    messagesContainer.addEventListener('click', (e) => {
+        messagesContainer.addEventListener('click', (e) => {
         const toggle = e.target.closest('.thinking-toggle');
         if (!toggle) return;
 
@@ -632,7 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const thinkingState = getThinkingState(messageDiv);
         setThinkingExpanded(messageDiv, !thinkingState.expanded, {
-            restartAnimation: !thinkingState.expanded
+            restartAnimation: !thinkingState.expanded && !thinkingState.hasOpenedOnce
         });
     });
 
@@ -643,6 +643,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetText: '',
                 renderedText: '',
                 expanded: false,
+                hasOpenedOnce: false,
+                animateOnOpen: false,
                 pending: false,
                 placeholderIndex: 0,
                 placeholderHold: 0,
@@ -692,11 +694,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const state = getThinkingState(messageDiv);
         const placeholder = 'Menyusun proses berpikir model...';
 
-        if (!state.expanded) return;
+        if (!state.expanded || !state.animateOnOpen) return;
         if (state.timerId) return;
 
         const step = () => {
-            if (!state.expanded) {
+            if (!state.expanded || !state.animateOnOpen) {
                 state.timerId = null;
                 return;
             }
@@ -713,6 +715,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     renderThinkingBody(messageDiv, state.renderedText);
                     state.timerId = setTimeout(step, 18);
                 } else {
+                    state.renderedText = latestTarget;
                     renderThinkingBody(messageDiv, latestTarget);
                     state.timerId = null;
                 }
@@ -754,12 +757,21 @@ document.addEventListener('DOMContentLoaded', () => {
         syncThinkingToggleState(messageDiv, expanded);
 
         if (expanded) {
-            if (options.restartAnimation) {
+            state.animateOnOpen = Boolean(options.restartAnimation);
+
+            if (state.animateOnOpen) {
                 stopThinkingAnimation(messageDiv);
                 state.renderedText = '';
+                state.placeholderIndex = 0;
+                state.placeholderHold = 0;
+                state.hasOpenedOnce = true;
+                animateThinkingText(messageDiv);
+            } else {
+                stopThinkingAnimation(messageDiv);
+                renderThinkingBody(messageDiv, state.targetText || state.renderedText);
             }
-            animateThinkingText(messageDiv);
         } else {
+            state.animateOnOpen = false;
             stopThinkingAnimation(messageDiv);
         }
     }
@@ -792,7 +804,7 @@ document.addEventListener('DOMContentLoaded', () => {
             thinkingBox.classList.toggle('is-pending', isPending);
             thinkingState.targetText = state.thinking || '';
 
-            if (!previousTarget && thinkingState.targetText) {
+            if (!previousTarget && thinkingState.targetText && thinkingState.animateOnOpen) {
                 stopThinkingAnimation(messageDiv);
                 thinkingState.renderedText = '';
                 thinkingState.placeholderIndex = 0;
@@ -802,7 +814,12 @@ document.addEventListener('DOMContentLoaded', () => {
             syncThinkingToggleState(messageDiv, thinkingState.expanded);
 
             if (thinkingState.expanded) {
-                animateThinkingText(messageDiv);
+                if (thinkingState.animateOnOpen) {
+                    animateThinkingText(messageDiv);
+                } else {
+                    stopThinkingAnimation(messageDiv);
+                    renderThinkingBody(messageDiv, thinkingState.targetText || thinkingState.renderedText);
+                }
             }
         } else {
             thinkingBox.hidden = true;
@@ -810,6 +827,9 @@ document.addEventListener('DOMContentLoaded', () => {
             thinkingState.targetText = '';
             thinkingState.pending = false;
             thinkingState.renderedText = '';
+            thinkingState.expanded = false;
+            thinkingState.hasOpenedOnce = false;
+            thinkingState.animateOnOpen = false;
             thinkingState.placeholderIndex = 0;
             thinkingState.placeholderHold = 0;
             stopThinkingAnimation(messageDiv);
