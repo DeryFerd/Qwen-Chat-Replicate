@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const messagesContainer = document.getElementById('messages-container');
     const chatArea = document.getElementById('chat-area');
 
-    const OLLAMA_API_KEY = '04ddb1f139f649c9ad85c5d2fe1c4887.H43p1ApyzpmvAV-Tpk3GD756';
+    const OLLAMA_API_KEY = '';
 
     function getSelectedModel() {
         const active = document.querySelector('.model-option.active');
@@ -423,7 +423,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     // Handle sending message
-    function sendMessage() {
+    async function sendMessage() {
         const text = chatInput.value.trim();
         if (!text) return;
 
