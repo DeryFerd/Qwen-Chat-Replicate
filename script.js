@@ -453,7 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
 
         try {
-            const response = await fetch('https://ollama.run/api/chat', {
+            const response = await fetch('https://ollama.com/api/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -499,8 +499,11 @@ document.addEventListener('DOMContentLoaded', () => {
             let errorMsg = err.message;
             if (!OLLAMA_API_KEY || OLLAMA_API_KEY === '' || OLLAMA_API_KEY === 'YOUR_API_KEY_HERE') {
                 errorMsg = 'API key belum disetting. Edit config.js';
+            } else if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+                errorMsg = 'CORS error - Ollama Cloud tidak支持 browser request. Perlu proxy server.';
             }
             appendMessageDOM('assistant', `⚠️ Error: ${errorMsg}`);
+            console.error('API Error:', err);
         } finally {
             sendBtn.removeAttribute('disabled');
         }
