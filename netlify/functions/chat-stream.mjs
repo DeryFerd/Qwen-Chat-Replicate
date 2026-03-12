@@ -1,4 +1,4 @@
-const OLLAMA_CHAT_URL = 'https://ollama.com/api/chat';
+import { HttpError, handleChatPayload } from './lib/chatProxy.mjs';
 
 function json(status, payload) {
   return new Response(JSON.stringify(payload), {
@@ -9,13 +9,35 @@ function json(status, payload) {
   });
 }
 
+function streamFromAsyncIterable(iterable) {
+  const encoder = new TextEncoder();
+
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const { value, done } = await iterable.next();
+
+        if (done) {
+          controller.close();
+          return;
+        }
+
+        controller.enqueue(encoder.encode(value));
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    async cancel() {
+      if (typeof iterable.return === 'function') {
+        await iterable.return();
+      }
+    }
+  });
+}
+
 export default async (req) => {
   if (req.method !== 'POST') {
     return json(405, { error: 'Method not allowed' });
-  }
-
-  if (!process.env.OLLAMA_API_KEY) {
-    return json(500, { error: 'OLLAMA_API_KEY belum diset di environment Netlify.' });
   }
 
   let payload;
@@ -25,46 +47,24 @@ export default async (req) => {
     return json(400, { error: 'Body request harus berupa JSON valid.' });
   }
 
-  const upstreamPayload = {
-    ...payload,
-    stream: payload?.stream !== false
-  };
-
   try {
-    const upstream = await fetch(OLLAMA_CHAT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OLLAMA_API_KEY}`
-      },
-      body: JSON.stringify(upstreamPayload)
-    });
+    const result = await handleChatPayload(payload, process.env);
 
-    if (!upstream.ok) {
-      const rawText = await upstream.text();
-      let errorMessage = `Ollama Cloud error (${upstream.status})`;
-
-      if (rawText) {
-        try {
-          const parsed = JSON.parse(rawText);
-          errorMessage = parsed.error || parsed.message || rawText;
-        } catch {
-          errorMessage = rawText;
-        }
-      }
-
-      return json(upstream.status, { error: errorMessage });
+    if (result.type === 'json') {
+      return json(200, result.payload);
     }
 
-    return new Response(upstream.body, {
+    return new Response(streamFromAsyncIterable(result.stream), {
       status: 200,
       headers: {
-        'Content-Type': upstreamPayload.stream === false ? (upstream.headers.get('content-type') || 'application/json; charset=utf-8') : 'application/x-ndjson; charset=utf-8',
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
         'Cache-Control': 'no-cache'
       }
     });
   } catch (error) {
     console.error('Netlify streaming proxy error:', error);
-    return json(502, { error: 'Gagal menghubungi Ollama Cloud dari Netlify Function.' });
+    const statusCode = error instanceof HttpError ? error.statusCode : 502;
+    const message = error instanceof HttpError ? error.message : 'Gagal menghubungi Ollama Cloud dari Netlify Function.';
+    return json(statusCode, { error: message });
   }
 };

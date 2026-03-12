@@ -1,7 +1,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { Readable } = require('node:stream');
+const { HttpError, handleChatPayload } = require('./backend/chatProxy.cjs');
 
 const ROOT_DIR = __dirname;
 
@@ -9,7 +9,6 @@ loadEnvFile(path.join(ROOT_DIR, '.env'));
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '127.0.0.1';
-const OLLAMA_CHAT_URL = 'https://ollama.com/api/chat';
 
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -81,12 +80,6 @@ function readRequestBody(req) {
 }
 
 async function handleChatProxy(req, res) {
-  if (!process.env.OLLAMA_API_KEY) {
-    return sendJson(res, 500, {
-      error: 'Server belum dikonfigurasi. Set env OLLAMA_API_KEY sebelum menjalankan server.'
-    });
-  }
-
   let rawBody;
   try {
     rawBody = await readRequestBody(req);
@@ -102,48 +95,32 @@ async function handleChatProxy(req, res) {
   }
 
   try {
-    const upstream = await fetch(OLLAMA_CHAT_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OLLAMA_API_KEY}`
-      },
-      body: JSON.stringify(payload)
+    const result = await handleChatPayload(payload, process.env);
+
+    if (result.type === 'json') {
+      return sendJson(res, 200, result.payload);
+    }
+
+    res.writeHead(200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'no-cache'
     });
 
-    if (!upstream.ok) {
-      const errorText = await upstream.text();
-      let errorMessage = `Ollama Cloud error (${upstream.status})`;
-
-      if (errorText) {
-        try {
-          const parsed = JSON.parse(errorText);
-          errorMessage = parsed.error || parsed.message || errorText;
-        } catch {
-          errorMessage = errorText;
-        }
-      }
-
-      return sendJson(res, upstream.status, { error: errorMessage });
+    for await (const chunk of result.stream) {
+      res.write(chunk);
     }
 
-    const headers = {
-      'Cache-Control': 'no-cache',
-      'Content-Type': upstream.headers.get('content-type') || 'application/x-ndjson; charset=utf-8'
-    };
-
-    res.writeHead(200, headers);
-
-    if (!upstream.body) {
-      return res.end();
-    }
-
-    Readable.fromWeb(upstream.body).pipe(res);
+    res.end();
   } catch (error) {
-    console.error('Proxy error:', error);
-    return sendJson(res, 502, {
-      error: 'Gagal menghubungi Ollama Cloud dari server proxy.'
-    });
+    const statusCode = error instanceof HttpError ? error.statusCode : 502;
+    const message = error instanceof HttpError ? error.message : 'Gagal menghubungi Ollama Cloud dari server proxy.';
+
+    if (!res.headersSent) {
+      return sendJson(res, statusCode, { error: message });
+    }
+
+    console.error('Streaming proxy error:', error);
+    res.end();
   }
 }
 
