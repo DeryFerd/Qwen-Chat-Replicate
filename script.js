@@ -12,6 +12,22 @@ document.addEventListener('DOMContentLoaded', () => {
         return active ? active.getAttribute('data-model') : 'qwen3.5:397b-cloud';
     }
 
+    function getModelMetaFromOption(option) {
+        return {
+            label: option?.getAttribute('data-label') || 'Qwen3.5 397B',
+            logoSrc: option?.getAttribute('data-logo') || './assets/models/qwen.png',
+            logoAlt: option?.getAttribute('data-alt') || 'Qwen'
+        };
+    }
+
+    function getActiveModelMeta() {
+        return getModelMetaFromOption(document.querySelector('.model-option.active'));
+    }
+
+    function formatMessageContent(content) {
+        return (content || '').replace(/\n/g, '<br>');
+    }
+
     // Sidebar Toggle
     const sidebar = document.getElementById('sidebar');
     const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
@@ -51,14 +67,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     function syncSelectedModelDisplay(option) {
-        if (!option) return;
+        const modelMeta = getModelMetaFromOption(option);
+        modelNameDisplay.textContent = modelMeta.label;
 
-        modelNameDisplay.textContent = option.getAttribute('data-label') || option.textContent.trim();
-
-        const optionLogo = option.querySelector('.model-option-logo');
-        if (modelLogoDisplay && optionLogo) {
-            modelLogoDisplay.src = optionLogo.getAttribute('src');
-            modelLogoDisplay.alt = optionLogo.getAttribute('alt');
+        if (modelLogoDisplay) {
+            modelLogoDisplay.src = modelMeta.logoSrc;
+            modelLogoDisplay.alt = modelMeta.logoAlt;
         }
     }
 
@@ -350,7 +364,7 @@ document.addEventListener('DOMContentLoaded', () => {
         welcomeScreen.style.display = 'none';
         messagesContainer.style.display = 'flex';
 
-        currentMessages.forEach(msg => appendMessageDOM(msg.role, msg.content));
+        currentMessages.forEach(msg => appendMessageDOM(msg.role, msg.content, msg));
 
         // Scroll to bottom
         setTimeout(() => {
@@ -451,17 +465,14 @@ document.addEventListener('DOMContentLoaded', () => {
         chatInput.style.height = 'auto';
         sendBtn.setAttribute('disabled', 'true');
 
-        const targetChatId = currentChatId;
+        const selectedModelMeta = getActiveModelMeta();
+        let fullReply = '';
+        let fullThinking = '';
 
-        // Loading bubble
-        const loadingDiv = document.createElement('div');
-        loadingDiv.className = 'message assistant';
-        loadingDiv.innerHTML = `
-            <div class="message-avatar"><img src="./logo.png" alt="Qwen"></div>
-            <div class="message-content"><div class="message-bubble">...</div></div>
-        `;
-        messagesContainer.appendChild(loadingDiv);
-        chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
+        const assistantMessage = appendMessageDOM('assistant', '', {
+            modelMeta: selectedModelMeta,
+            pendingThinking: true
+        });
 
         try {
             const response = await fetch(CHAT_API_URL, {
@@ -471,7 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 body: JSON.stringify({
                     model: getSelectedModel(),
-                    messages: currentMessages,
+                    messages: currentMessages.map(({ role, content }) => ({ role, content })),
                     stream: true
                 })
             });
@@ -487,18 +498,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 throw new Error(errorMsg);
             }
-            const contentType = response.headers.get('content-type') || '';
-            let fullReply = '';
 
-            loadingDiv.remove();
-            const streamMessage = appendMessageDOM('assistant', '');
-            const streamBubble = streamMessage.querySelector('.message-bubble');
+            const contentType = response.headers.get('content-type') || '';
 
             if (contentType.includes('application/json')) {
                 const payload = await response.json();
                 fullReply = payload?.message?.content || payload?.response || '';
-                streamBubble.innerHTML = fullReply.replace(/\n/g, '<br>');
-                currentMessages.push({ role: 'assistant', content: fullReply });
+                fullThinking = payload?.message?.thinking || payload?.thinking || '';
+
+                updateAssistantMessageState(assistantMessage, {
+                    content: fullReply,
+                    thinking: fullThinking,
+                    pendingThinking: false
+                });
+
+                currentMessages.push({
+                    role: 'assistant',
+                    content: fullReply,
+                    thinking: fullThinking,
+                    modelMeta: selectedModelMeta
+                });
                 saveCurrentChat();
                 return;
             }
@@ -523,11 +542,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!line.trim()) continue;
 
                     try {
-                        const token = JSON.parse(line)?.message?.content || '';
-                        fullReply += token;
-                        streamBubble.innerHTML =
-                            fullReply.replace(/\n/g, '<br>');
-                        chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
+                        const parsed = JSON.parse(line);
+                        const thinkingToken = parsed?.message?.thinking || '';
+                        const contentToken = parsed?.message?.content || '';
+
+                        if (thinkingToken) fullThinking += thinkingToken;
+                        if (contentToken) fullReply += contentToken;
+
+                        updateAssistantMessageState(assistantMessage, {
+                            content: fullReply,
+                            thinking: fullThinking,
+                            pendingThinking: true
+                        });
                     } catch {
                         // Ignore keep-alive or incomplete lines.
                     }
@@ -537,25 +563,38 @@ document.addEventListener('DOMContentLoaded', () => {
             pending += decoder.decode();
             if (pending.trim()) {
                 try {
-                    const token = JSON.parse(pending)?.message?.content || '';
-                    fullReply += token;
-                    streamBubble.innerHTML =
-                        fullReply.replace(/\n/g, '<br>');
+                    const parsed = JSON.parse(pending);
+                    const thinkingToken = parsed?.message?.thinking || '';
+                    const contentToken = parsed?.message?.content || '';
+
+                    if (thinkingToken) fullThinking += thinkingToken;
+                    if (contentToken) fullReply += contentToken;
                 } catch {
                     // Ignore trailing non-JSON content.
                 }
             }
 
-            currentMessages.push({ role: 'assistant', content: fullReply });
+            updateAssistantMessageState(assistantMessage, {
+                content: fullReply,
+                thinking: fullThinking,
+                pendingThinking: false
+            });
+
+            currentMessages.push({
+                role: 'assistant',
+                content: fullReply,
+                thinking: fullThinking,
+                modelMeta: selectedModelMeta
+            });
             saveCurrentChat();
 
         } catch (err) {
-            loadingDiv.remove();
+            assistantMessage.remove();
             let errorMsg = err.message || 'Terjadi error saat menghubungi server proxy.';
             if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
                 errorMsg = 'Tidak bisa terhubung ke server lokal. Jalankan `node server.js` dan pastikan `OLLAMA_API_KEY` sudah diset.';
             }
-            appendMessageDOM('assistant', `Error: ${errorMsg}`);
+            appendMessageDOM('assistant', `Error: ${errorMsg}`, { modelMeta: selectedModelMeta });
             console.error('API Error:', err);
         } finally {
             sendBtn.removeAttribute('disabled');
@@ -583,7 +622,40 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    function appendMessageDOM(role, content) {
+    function updateAssistantMessageState(messageDiv, state = {}) {
+        const thinkingBox = messageDiv.querySelector('.thinking-block');
+        const thinkingTitle = messageDiv.querySelector('.thinking-title');
+        const thinkingBody = messageDiv.querySelector('.thinking-body');
+        const messageBubble = messageDiv.querySelector('.message-bubble');
+        const hasThinking = Boolean(state.thinking);
+        const isPending = Boolean(state.pendingThinking);
+
+        if (messageBubble) {
+            messageBubble.innerHTML = formatMessageContent(state.content || '');
+        }
+
+        if (thinkingBox && thinkingTitle && thinkingBody) {
+            if (hasThinking || isPending) {
+                thinkingBox.hidden = false;
+                thinkingTitle.textContent = isPending ? 'Thinking...' : 'Thinking';
+                thinkingBody.innerHTML = hasThinking
+                    ? formatMessageContent(state.thinking)
+                    : '<span class="thinking-placeholder">Menyusun proses berpikir model...</span>';
+                thinkingBox.classList.toggle('is-pending', isPending && !hasThinking);
+            } else {
+                thinkingBox.hidden = true;
+                thinkingBody.innerHTML = '';
+                thinkingBox.classList.remove('is-pending');
+            }
+        }
+
+        chatArea.scrollTo({
+            top: chatArea.scrollHeight,
+            behavior: 'smooth'
+        });
+    }
+
+    function appendMessageDOM(role, content, messageData = {}) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
 
@@ -591,21 +663,46 @@ document.addEventListener('DOMContentLoaded', () => {
         if (role === 'user') {
             avatarHtml = `<div class="message-avatar">U</div>`;
         } else {
+            const modelMeta = messageData.modelMeta || getActiveModelMeta();
             avatarHtml = `
                 <div class="message-avatar">
-                    <img src="./logo.png" alt="Qwen" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\\\'http://www.w3.org/2000/svg\\\' width=\\\'32\\\' height=\\\'32\\\' fill=\\\'none\\\' viewBox=\\\'0 0 32 32\\\'><path fill=\\\'%236366F1\\\' d=\\\'M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28zm0 25.2A11.2 11.2 0 1 1 27.2 16 11.2 11.2 0 0 1 16 27.2z\\\'/></svg>'">
+                    <img src="${modelMeta.logoSrc}" alt="${modelMeta.logoAlt}" onerror="this.onerror=null; this.src='./logo.png'">
                 </div>
             `;
         }
 
-        const formattedContent = content.replace(/\n/g, '<br>');
+        if (role === 'assistant') {
+            messageDiv.innerHTML = `
+                ${avatarHtml}
+                <div class="message-content">
+                    <div class="thinking-block" hidden>
+                        <div class="thinking-title">Thinking...</div>
+                        <div class="thinking-body"></div>
+                    </div>
+                    <div class="message-bubble"></div>
+                </div>
+            `;
 
-        messageDiv.innerHTML = `
-            ${avatarHtml}
-            <div class="message-content">
-                <div class="message-bubble">${formattedContent}</div>
-            </div>
-        `;
+            updateAssistantMessageState(messageDiv, {
+                content,
+                thinking: messageData.thinking || '',
+                pendingThinking: Boolean(messageData.pendingThinking)
+            });
+        } else {
+            const formattedContent = formatMessageContent(content);
+
+            messageDiv.innerHTML = `
+                ${avatarHtml}
+                <div class="message-content">
+                    <div class="message-bubble">${formattedContent}</div>
+                </div>
+            `;
+
+            chatArea.scrollTo({
+                top: chatArea.scrollHeight,
+                behavior: 'smooth'
+            });
+        }
 
         messagesContainer.appendChild(messageDiv);
 

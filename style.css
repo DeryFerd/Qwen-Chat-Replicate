@@ -730,6 +730,43 @@ ul {
     gap: 8px;
 }
 
+.thinking-block {
+    padding: 10px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.thinking-block[hidden] {
+    display: none;
+}
+
+.thinking-block.is-pending {
+    border-style: dashed;
+    opacity: 0.88;
+}
+
+.thinking-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.thinking-body {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    white-space: normal;
+}
+
+.thinking-placeholder {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
 .message.user .message-content {
     align-items: flex-end;
 }
