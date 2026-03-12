@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const messagesContainer = document.getElementById('messages-container');
     const chatArea = document.getElementById('chat-area');
 
-    const OLLAMA_API_KEY = '';
+    const OLLAMA_API_KEY = window.OLLAMA_API_KEY || '';
 
     function getSelectedModel() {
         const active = document.querySelector('.model-option.active');
@@ -496,7 +496,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (err) {
             loadingDiv.remove();
-            appendMessageDOM('assistant', `⚠️ Error: ${err.message}`);
+            let errorMsg = err.message;
+            if (!OLLAMA_API_KEY || OLLAMA_API_KEY === '' || OLLAMA_API_KEY === 'YOUR_API_KEY_HERE') {
+                errorMsg = 'API key belum disetting. Edit config.js';
+            }
+            appendMessageDOM('assistant', `⚠️ Error: ${errorMsg}`);
         } finally {
             sendBtn.removeAttribute('disabled');
         }
