@@ -731,28 +731,70 @@ ul {
 }
 
 .thinking-block {
-    padding: 10px 14px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 16px;
     background: rgba(255, 255, 255, 0.03);
+    overflow: hidden;
 }
 
 .thinking-block[hidden] {
     display: none;
 }
 
-.thinking-block.is-pending {
-    border-style: dashed;
-    opacity: 0.88;
+.thinking-block.is-pending .thinking-icon {
+    animation: thinkingGlow 1.4s ease-in-out infinite;
 }
 
-.thinking-title {
+.thinking-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 11px 14px;
+    background: transparent;
+    border: 0;
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: left;
+}
+
+.thinking-toggle-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.thinking-icon {
+    color: #f6d365;
+    font-size: 18px;
+}
+
+.thinking-label {
     font-size: 13px;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--text-muted);
-    margin-bottom: 6px;
+}
+
+.thinking-caret {
+    color: var(--text-muted);
+    transition: transform var(--transition), color var(--transition);
+}
+
+.thinking-caret.is-open {
+    transform: rotate(90deg);
+    color: var(--text-primary);
+}
+
+.thinking-panel {
+    padding: 0 14px 12px;
+}
+
+.thinking-panel[hidden] {
+    display: none;
 }
 
 .thinking-body {
@@ -760,11 +802,28 @@ ul {
     line-height: 1.6;
     color: var(--text-secondary);
     white-space: normal;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding-top: 10px;
 }
 
 .thinking-placeholder {
     color: var(--text-muted);
     font-style: italic;
+}
+
+@keyframes thinkingGlow {
+    0%,
+    100% {
+        opacity: 0.65;
+        transform: scale(0.98);
+        filter: drop-shadow(0 0 0 rgba(246, 211, 101, 0));
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.04);
+        filter: drop-shadow(0 0 10px rgba(246, 211, 101, 0.35));
+    }
 }
 
 .message.user .message-content {

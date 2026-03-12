@@ -98,6 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentChatId = null;
     let currentMessages = [];
     let botResponseTimeout = null;
+    const thinkingAnimationState = new WeakMap();
 
     // Elements
     const sidebarContent = document.querySelector('.sidebar-content');
@@ -622,31 +623,156 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    messagesContainer.addEventListener('click', (e) => {
+        const toggle = e.target.closest('.thinking-toggle');
+        if (!toggle) return;
+
+        const messageDiv = toggle.closest('.message.assistant');
+        if (!messageDiv) return;
+
+        const thinkingState = getThinkingState(messageDiv);
+        setThinkingExpanded(messageDiv, !thinkingState.expanded, {
+            restartAnimation: !thinkingState.expanded
+        });
+    });
+
+    function getThinkingState(messageDiv) {
+        let state = thinkingAnimationState.get(messageDiv);
+        if (!state) {
+            state = {
+                targetText: '',
+                renderedText: '',
+                expanded: false,
+                timerId: null
+            };
+            thinkingAnimationState.set(messageDiv, state);
+        }
+        return state;
+    }
+
+    function stopThinkingAnimation(messageDiv) {
+        const state = getThinkingState(messageDiv);
+        if (state.timerId) {
+            clearTimeout(state.timerId);
+            state.timerId = null;
+        }
+    }
+
+    function syncThinkingToggleState(messageDiv, expanded) {
+        const toggle = messageDiv.querySelector('.thinking-toggle');
+        const panel = messageDiv.querySelector('.thinking-panel');
+        const caret = messageDiv.querySelector('.thinking-caret');
+
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        }
+
+        if (panel) {
+            panel.hidden = !expanded;
+        }
+
+        if (caret) {
+            caret.classList.toggle('is-open', expanded);
+        }
+    }
+
+    function renderThinkingBody(messageDiv, text) {
+        const thinkingBody = messageDiv.querySelector('.thinking-body');
+        if (!thinkingBody) return;
+
+        thinkingBody.innerHTML = text
+            ? formatMessageContent(text)
+            : '<span class="thinking-placeholder">Menyusun proses berpikir model...</span>';
+    }
+
+    function animateThinkingText(messageDiv) {
+        const state = getThinkingState(messageDiv);
+        const target = state.targetText || '';
+
+        if (!state.expanded) return;
+
+        if (!target) {
+            renderThinkingBody(messageDiv, '');
+            stopThinkingAnimation(messageDiv);
+            return;
+        }
+
+        if (state.timerId) return;
+
+        const step = () => {
+            if (!state.expanded) {
+                state.timerId = null;
+                return;
+            }
+
+            const latestTarget = state.targetText || '';
+            if (state.renderedText.length < latestTarget.length) {
+                const chunkSize = Math.max(1, Math.min(8, Math.ceil((latestTarget.length - state.renderedText.length) / 18)));
+                state.renderedText = latestTarget.slice(0, state.renderedText.length + chunkSize);
+                renderThinkingBody(messageDiv, state.renderedText);
+                state.timerId = setTimeout(step, 18);
+            } else {
+                renderThinkingBody(messageDiv, latestTarget);
+                state.timerId = null;
+            }
+        };
+
+        step();
+    }
+
+    function setThinkingExpanded(messageDiv, expanded, options = {}) {
+        const state = getThinkingState(messageDiv);
+        state.expanded = expanded;
+        syncThinkingToggleState(messageDiv, expanded);
+
+        if (expanded) {
+            if (options.restartAnimation) {
+                stopThinkingAnimation(messageDiv);
+                state.renderedText = '';
+            }
+            animateThinkingText(messageDiv);
+        } else {
+            stopThinkingAnimation(messageDiv);
+        }
+    }
+
     function updateAssistantMessageState(messageDiv, state = {}) {
         const thinkingBox = messageDiv.querySelector('.thinking-block');
-        const thinkingTitle = messageDiv.querySelector('.thinking-title');
-        const thinkingBody = messageDiv.querySelector('.thinking-body');
+        const thinkingLabel = messageDiv.querySelector('.thinking-label');
         const messageBubble = messageDiv.querySelector('.message-bubble');
         const hasThinking = Boolean(state.thinking);
         const isPending = Boolean(state.pendingThinking);
+        const thinkingState = getThinkingState(messageDiv);
 
         if (messageBubble) {
             messageBubble.innerHTML = formatMessageContent(state.content || '');
         }
 
-        if (thinkingBox && thinkingTitle && thinkingBody) {
-            if (hasThinking || isPending) {
-                thinkingBox.hidden = false;
-                thinkingTitle.textContent = isPending ? 'Thinking...' : 'Thinking';
-                thinkingBody.innerHTML = hasThinking
-                    ? formatMessageContent(state.thinking)
-                    : '<span class="thinking-placeholder">Menyusun proses berpikir model...</span>';
-                thinkingBox.classList.toggle('is-pending', isPending && !hasThinking);
-            } else {
-                thinkingBox.hidden = true;
-                thinkingBody.innerHTML = '';
-                thinkingBox.classList.remove('is-pending');
+        if (!thinkingBox) {
+            return;
+        }
+
+        if (thinkingLabel) {
+            thinkingLabel.textContent = isPending ? 'Thinking...' : 'Thinking';
+        }
+
+        if (hasThinking || isPending) {
+            thinkingBox.hidden = false;
+            thinkingBox.classList.toggle('is-pending', isPending);
+            thinkingState.targetText = state.thinking || '';
+            syncThinkingToggleState(messageDiv, thinkingState.expanded);
+
+            if (thinkingState.expanded) {
+                animateThinkingText(messageDiv);
             }
+        } else {
+            thinkingBox.hidden = true;
+            thinkingBox.classList.remove('is-pending');
+            thinkingState.targetText = '';
+            thinkingState.renderedText = '';
+            stopThinkingAnimation(messageDiv);
+            syncThinkingToggleState(messageDiv, false);
+            renderThinkingBody(messageDiv, '');
         }
 
         chatArea.scrollTo({
@@ -676,8 +802,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${avatarHtml}
                 <div class="message-content">
                     <div class="thinking-block" hidden>
-                        <div class="thinking-title">Thinking...</div>
-                        <div class="thinking-body"></div>
+                        <button type="button" class="thinking-toggle" aria-expanded="false">
+                            <span class="thinking-toggle-main">
+                                <i class="ph ph-lightbulb-filament thinking-icon"></i>
+                                <span class="thinking-label">Thinking</span>
+                            </span>
+                            <i class="ph ph-caret-right thinking-caret"></i>
+                        </button>
+                        <div class="thinking-panel" hidden>
+                            <div class="thinking-body"></div>
+                        </div>
                     </div>
                     <div class="message-bubble"></div>
                 </div>
