@@ -643,6 +643,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetText: '',
                 renderedText: '',
                 expanded: false,
+                pending: false,
+                placeholderIndex: 0,
+                placeholderHold: 0,
                 timerId: null
             };
             thinkingAnimationState.set(messageDiv, state);
@@ -687,16 +690,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function animateThinkingText(messageDiv) {
         const state = getThinkingState(messageDiv);
-        const target = state.targetText || '';
+        const placeholder = 'Menyusun proses berpikir model...';
 
         if (!state.expanded) return;
-
-        if (!target) {
-            renderThinkingBody(messageDiv, '');
-            stopThinkingAnimation(messageDiv);
-            return;
-        }
-
         if (state.timerId) return;
 
         const step = () => {
@@ -706,15 +702,47 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const latestTarget = state.targetText || '';
-            if (state.renderedText.length < latestTarget.length) {
-                const chunkSize = Math.max(1, Math.min(8, Math.ceil((latestTarget.length - state.renderedText.length) / 18)));
-                state.renderedText = latestTarget.slice(0, state.renderedText.length + chunkSize);
-                renderThinkingBody(messageDiv, state.renderedText);
-                state.timerId = setTimeout(step, 18);
-            } else {
-                renderThinkingBody(messageDiv, latestTarget);
-                state.timerId = null;
+            if (latestTarget) {
+                if (state.renderedText.length > latestTarget.length) {
+                    state.renderedText = '';
+                }
+
+                if (state.renderedText.length < latestTarget.length) {
+                    const chunkSize = Math.max(1, Math.min(8, Math.ceil((latestTarget.length - state.renderedText.length) / 18)));
+                    state.renderedText = latestTarget.slice(0, state.renderedText.length + chunkSize);
+                    renderThinkingBody(messageDiv, state.renderedText);
+                    state.timerId = setTimeout(step, 18);
+                } else {
+                    renderThinkingBody(messageDiv, latestTarget);
+                    state.timerId = null;
+                }
+                return;
             }
+
+            if (state.pending) {
+                if (state.placeholderIndex < placeholder.length) {
+                    state.placeholderIndex += 1;
+                    renderThinkingBody(messageDiv, placeholder.slice(0, state.placeholderIndex));
+                    state.timerId = setTimeout(step, 26);
+                    return;
+                }
+
+                if (state.placeholderHold < 10) {
+                    state.placeholderHold += 1;
+                    renderThinkingBody(messageDiv, placeholder);
+                    state.timerId = setTimeout(step, 40);
+                    return;
+                }
+
+                state.placeholderIndex = 0;
+                state.placeholderHold = 0;
+                renderThinkingBody(messageDiv, '');
+                state.timerId = setTimeout(step, 120);
+                return;
+            }
+
+            renderThinkingBody(messageDiv, state.renderedText || latestTarget);
+            state.timerId = null;
         };
 
         step();
@@ -743,6 +771,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const hasThinking = Boolean(state.thinking);
         const isPending = Boolean(state.pendingThinking);
         const thinkingState = getThinkingState(messageDiv);
+        const previousTarget = thinkingState.targetText || '';
 
         if (messageBubble) {
             messageBubble.innerHTML = formatMessageContent(state.content || '');
@@ -753,13 +782,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (thinkingLabel) {
-            thinkingLabel.textContent = isPending ? 'Thinking...' : 'Thinking';
+            thinkingLabel.textContent = 'Thinking';
         }
+
+        thinkingState.pending = isPending;
 
         if (hasThinking || isPending) {
             thinkingBox.hidden = false;
             thinkingBox.classList.toggle('is-pending', isPending);
             thinkingState.targetText = state.thinking || '';
+
+            if (!previousTarget && thinkingState.targetText) {
+                stopThinkingAnimation(messageDiv);
+                thinkingState.renderedText = '';
+                thinkingState.placeholderIndex = 0;
+                thinkingState.placeholderHold = 0;
+            }
+
             syncThinkingToggleState(messageDiv, thinkingState.expanded);
 
             if (thinkingState.expanded) {
@@ -769,7 +808,10 @@ document.addEventListener('DOMContentLoaded', () => {
             thinkingBox.hidden = true;
             thinkingBox.classList.remove('is-pending');
             thinkingState.targetText = '';
+            thinkingState.pending = false;
             thinkingState.renderedText = '';
+            thinkingState.placeholderIndex = 0;
+            thinkingState.placeholderHold = 0;
             stopThinkingAnimation(messageDiv);
             syncThinkingToggleState(messageDiv, false);
             renderThinkingBody(messageDiv, '');
@@ -805,7 +847,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button type="button" class="thinking-toggle" aria-expanded="false">
                             <span class="thinking-toggle-main">
                                 <i class="ph ph-lightbulb-filament thinking-icon"></i>
-                                <span class="thinking-label">Thinking</span>
+                                <span class="thinking-label">Thinking</span><span class="thinking-dots" aria-hidden="true"><span></span><span></span><span></span></span>
                             </span>
                             <i class="ph ph-caret-right thinking-caret"></i>
                         </button>
