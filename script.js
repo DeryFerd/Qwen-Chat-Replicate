@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const messagesContainer = document.getElementById('messages-container');
     const chatArea = document.getElementById('chat-area');
 
-    const OLLAMA_API_KEY = window.OLLAMA_API_KEY || '';
+    const CHAT_API_URL = '/api/chat';
 
     function getSelectedModel() {
         const active = document.querySelector('.model-option.active');
@@ -453,11 +453,10 @@ document.addEventListener('DOMContentLoaded', () => {
         chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
 
         try {
-            const response = await fetch('https://ollama.com/api/chat', {
+            const response = await fetch(CHAT_API_URL, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${OLLAMA_API_KEY}`
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     model: getSelectedModel(),
@@ -466,28 +465,73 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
             });
 
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
+            if (!response.ok) {
+                let errorMsg = `HTTP ${response.status}`;
+                try {
+                    const errorPayload = await response.json();
+                    errorMsg = errorPayload.error || errorMsg;
+                } catch {
+                    const fallbackText = await response.text();
+                    if (fallbackText) errorMsg = fallbackText;
+                }
+                throw new Error(errorMsg);
+            }
+            const contentType = response.headers.get('content-type') || '';
             let fullReply = '';
 
             loadingDiv.remove();
-            const streamBubble = appendMessageDOM('assistant', '');
+            const streamMessage = appendMessageDOM('assistant', '');
+            const streamBubble = streamMessage.querySelector('.message-bubble');
+
+            if (contentType.includes('application/json')) {
+                const payload = await response.json();
+                fullReply = payload?.message?.content || payload?.response || '';
+                streamBubble.innerHTML = fullReply.replace(/\n/g, '<br>');
+                currentMessages.push({ role: 'assistant', content: fullReply });
+                saveCurrentChat();
+                return;
+            }
+
+            if (!response.body) {
+                throw new Error('Response stream tidak tersedia dari server proxy.');
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let pending = '';
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const lines = decoder.decode(value, { stream: true }).split('\n').filter(l => l.trim());
+                pending += decoder.decode(value, { stream: true });
+                const lines = pending.split('\n');
+                pending = lines.pop() || '';
+
                 for (const line of lines) {
+                    if (!line.trim()) continue;
+
                     try {
                         const token = JSON.parse(line)?.message?.content || '';
                         fullReply += token;
-                        streamBubble.querySelector('.message-bubble').innerHTML =
+                        streamBubble.innerHTML =
                             fullReply.replace(/\n/g, '<br>');
                         chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
-                    } catch {}
+                    } catch {
+                        // Ignore keep-alive or incomplete lines.
+                    }
+                }
+            }
+
+            pending += decoder.decode();
+            if (pending.trim()) {
+                try {
+                    const token = JSON.parse(pending)?.message?.content || '';
+                    fullReply += token;
+                    streamBubble.innerHTML =
+                        fullReply.replace(/\n/g, '<br>');
+                } catch {
+                    // Ignore trailing non-JSON content.
                 }
             }
 
@@ -496,13 +540,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (err) {
             loadingDiv.remove();
-            let errorMsg = err.message;
-            if (!OLLAMA_API_KEY || OLLAMA_API_KEY === '' || OLLAMA_API_KEY === 'YOUR_API_KEY_HERE') {
-                errorMsg = 'API key belum disetting. Edit config.js';
-            } else if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
-                errorMsg = 'CORS error - Ollama Cloud tidak支持 browser request. Perlu proxy server.';
+            let errorMsg = err.message || 'Terjadi error saat menghubungi server proxy.';
+            if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+                errorMsg = 'Tidak bisa terhubung ke server lokal. Jalankan `node server.js` dan pastikan `OLLAMA_API_KEY` sudah diset.';
             }
-            appendMessageDOM('assistant', `⚠️ Error: ${errorMsg}`);
+            appendMessageDOM('assistant', `Error: ${errorMsg}`);
             console.error('API Error:', err);
         } finally {
             sendBtn.removeAttribute('disabled');
@@ -561,5 +603,8 @@ document.addEventListener('DOMContentLoaded', () => {
             top: chatArea.scrollHeight,
             behavior: 'smooth'
         });
+
+        return messageDiv;
     }
 });
+
