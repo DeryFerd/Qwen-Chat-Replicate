@@ -5,6 +5,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const messagesContainer = document.getElementById('messages-container');
     const chatArea = document.getElementById('chat-area');
 
+    const OLLAMA_API_KEY = '04ddb1f139f649c9ad85c5d2fe1c4887.H43p1ApyzpmvAV-Tpk3GD756';
+
+    function getSelectedModel() {
+        const active = document.querySelector('.model-option.active');
+        return active ? active.getAttribute('data-model') : 'qwen3.5:397b-cloud';
+    }
+
     // Sidebar Toggle
     const sidebar = document.getElementById('sidebar');
     const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
@@ -420,44 +427,79 @@ document.addEventListener('DOMContentLoaded', () => {
         const text = chatInput.value.trim();
         if (!text) return;
 
-        // Hide welcome screen, show messages container
         if (welcomeScreen.style.display !== 'none') {
             welcomeScreen.style.display = 'none';
             messagesContainer.style.display = 'flex';
         }
 
-        // Add user message to state and DOM
         currentMessages.push({ role: 'user', content: text });
         appendMessageDOM('user', text);
         saveCurrentChat();
 
-        // Reset input
         chatInput.value = '';
         chatInput.style.height = 'auto';
         sendBtn.setAttribute('disabled', 'true');
 
-        // Record the ID of the chat this message was sent in
         const targetChatId = currentChatId;
 
-        // Simulate AI thinking and replying
-        botResponseTimeout = setTimeout(() => {
-            const reply = `Here is a simulated response from Qwen. You said: "${text}". I am designed to replicate the UI, so I'm just echoing you right now, but I look great doing it!`;
+        // Loading bubble
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'message assistant';
+        loadingDiv.innerHTML = `
+            <div class="message-avatar"><img src="./logo.png" alt="Qwen"></div>
+            <div class="message-content"><div class="message-bubble">...</div></div>
+        `;
+        messagesContainer.appendChild(loadingDiv);
+        chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
 
-            if (currentChatId === targetChatId) {
-                // If user is still in the same chat, append to DOM and save normally
-                currentMessages.push({ role: 'assistant', content: reply });
-                appendMessageDOM('assistant', reply);
-                saveCurrentChat();
-            } else {
-                // If user switched away, just update the specific chat in background
-                const index = chats.findIndex(c => c.id === targetChatId);
-                if (index !== -1) {
-                    chats[index].messages.push({ role: 'assistant', content: reply });
-                    chats[index].updatedAt = new Date().toISOString();
-                    saveChats();
+        try {
+            const response = await fetch('https://ollama.com/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${OLLAMA_API_KEY}`
+                },
+                body: JSON.stringify({
+                    model: getSelectedModel(),
+                    messages: currentMessages,
+                    stream: true
+                })
+            });
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullReply = '';
+
+            loadingDiv.remove();
+            const streamBubble = appendMessageDOM('assistant', '');
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const lines = decoder.decode(value, { stream: true }).split('\n').filter(l => l.trim());
+                for (const line of lines) {
+                    try {
+                        const token = JSON.parse(line)?.message?.content || '';
+                        fullReply += token;
+                        streamBubble.querySelector('.message-bubble').innerHTML =
+                            fullReply.replace(/\n/g, '<br>');
+                        chatArea.scrollTo({ top: chatArea.scrollHeight, behavior: 'smooth' });
+                    } catch {}
                 }
             }
-        }, 1000);
+
+            currentMessages.push({ role: 'assistant', content: fullReply });
+            saveCurrentChat();
+
+        } catch (err) {
+            loadingDiv.remove();
+            appendMessageDOM('assistant', `⚠️ Error: ${err.message}`);
+        } finally {
+            sendBtn.removeAttribute('disabled');
+        }
     }
 
     sendBtn.addEventListener('click', sendMessage);
