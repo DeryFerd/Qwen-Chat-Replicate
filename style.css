@@ -1144,6 +1144,19 @@ ul {
     scrollbar-width: none;
 }
 
+.tool-activity {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    padding: 6px 10px;
+    border-radius: var(--radius-md);
+    width: fit-content;
+}
+
 .sources-row::-webkit-scrollbar {
     display: none;
 }

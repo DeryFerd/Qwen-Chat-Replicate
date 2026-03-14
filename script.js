@@ -433,7 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (existing) existing.remove();
 
         const results = collectWebSearchResultsBefore(currentMessages, assistantIndex);
-        if (!results.length) return;
+        if (!results.length) return false;
 
         const row = document.createElement('div');
         row.className = 'sources-row';
@@ -469,6 +469,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         messageContent.appendChild(row);
+        return true;
+    }
+
+    function updateToolActivity(messageDiv, text) {
+        if (!messageDiv) return;
+        const activity = messageDiv.querySelector('.tool-activity');
+        if (!activity) return;
+        if (text) {
+            activity.textContent = text;
+            activity.hidden = false;
+        } else {
+            activity.hidden = true;
+        }
     }
 
     // Sidebar Toggle
@@ -1335,8 +1348,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const assistantMessage = appendMessageDOM('assistant', '', {
             modelMeta: selectedModelMeta,
-            pendingThinking: enableThinking
+            pendingThinking: enableThinking,
+            forceThinking: enableThinking
         });
+        assistantMessage.dataset.webSearchUsed = 'false';
+        updateToolActivity(assistantMessage, '');
         const controller = new AbortController();
         activeAbortController = controller;
         setSendButtonMode('stop');
@@ -1350,7 +1366,8 @@ document.addEventListener('DOMContentLoaded', () => {
             updateAssistantMessageState(assistantMessage, {
                 content: fullReply,
                 thinking: enableThinking ? fullThinking : '',
-                pendingThinking: false
+                pendingThinking: false,
+                forceThinking: enableThinking
             });
 
             if (pendingToolMessages.length) {
@@ -1364,7 +1381,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 modelMeta: selectedModelMeta
             });
             saveCurrentChat();
-            renderSourcesForAssistant(assistantMessage, currentMessages.length - 1);
+            const hasSources = renderSourcesForAssistant(assistantMessage, currentMessages.length - 1);
+            if (assistantMessage.dataset.webSearchUsed === 'true' && !hasSources) {
+                updateToolActivity(assistantMessage, 'Web search used');
+            } else {
+                updateToolActivity(assistantMessage, '');
+            }
 
             if (!aborted) {
                 generateTitleIfNeeded();
@@ -1441,6 +1463,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const contentToken = parsed?.message?.content || '';
                         const toolName = parsed?.message?.tool_name || parsed?.message?.name;
                         const role = parsed?.message?.role;
+                        const toolCalls = parsed?.message?.tool_calls;
                         const isToolMessage = role === 'tool' || Boolean(toolName);
 
                         if (thinkingToken && !isToolMessage && enableThinking) fullThinking += thinkingToken;
@@ -1452,11 +1475,16 @@ document.addEventListener('DOMContentLoaded', () => {
                                 content: parsed?.message?.content || ''
                             });
                         }
+                        if (Array.isArray(toolCalls) && toolCalls.some(call => call?.function?.name === 'web_search')) {
+                            assistantMessage.dataset.webSearchUsed = 'true';
+                            updateToolActivity(assistantMessage, 'Searching the web...');
+                        }
 
                         updateAssistantMessageState(assistantMessage, {
                             content: fullReply,
                             thinking: enableThinking ? fullThinking : '',
-                            pendingThinking: enableThinking
+                            pendingThinking: enableThinking,
+                            forceThinking: enableThinking
                         });
                     } catch {
                         // Ignore keep-alive or incomplete lines.
@@ -1654,6 +1682,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 hasOpenedOnce: false,
                 animateOnOpen: false,
                 pending: false,
+                emptyNotice: '',
                 placeholderIndex: 0,
                 placeholderHold: 0,
                 timerId: null
@@ -1689,13 +1718,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function renderThinkingBody(messageDiv, text) {
+    function renderThinkingBody(messageDiv, text, placeholderText) {
         const thinkingBody = messageDiv.querySelector('.thinking-body');
         if (!thinkingBody) return;
 
-        thinkingBody.innerHTML = text
-            ? formatPlainText(text)
-            : '<span class="thinking-placeholder">Menyusun proses berpikir model...</span>';
+        if (text) {
+            thinkingBody.innerHTML = formatPlainText(text);
+            return;
+        }
+
+        if (placeholderText) {
+            thinkingBody.innerHTML = `<span class="thinking-placeholder">${escapeHtml(placeholderText)}</span>`;
+            return;
+        }
+
+        thinkingBody.innerHTML = '<span class="thinking-placeholder">Menyusun proses berpikir model...</span>';
     }
 
     function animateThinkingText(messageDiv) {
@@ -1776,7 +1813,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 animateThinkingText(messageDiv);
             } else {
                 stopThinkingAnimation(messageDiv);
-                renderThinkingBody(messageDiv, state.targetText || state.renderedText);
+                const displayText = state.targetText || state.renderedText;
+                renderThinkingBody(messageDiv, displayText, state.emptyNotice);
             }
         } else {
             state.animateOnOpen = false;
@@ -1790,6 +1828,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const messageBubble = messageDiv.querySelector('.message-bubble');
         const hasThinking = Boolean(state.thinking);
         const isPending = Boolean(state.pendingThinking);
+        const forceThinking = Boolean(state.forceThinking);
+        const shouldShowThinking = forceThinking || hasThinking || isPending;
         const thinkingState = getThinkingState(messageDiv);
         const previousTarget = thinkingState.targetText || '';
 
@@ -1807,10 +1847,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         thinkingState.pending = isPending;
 
-        if (hasThinking || isPending) {
+        thinkingState.emptyNotice = '';
+
+        if (shouldShowThinking) {
             thinkingBox.hidden = false;
             thinkingBox.classList.toggle('is-pending', isPending);
             thinkingState.targetText = state.thinking || '';
+            if (forceThinking && !hasThinking && !isPending) {
+                thinkingState.emptyNotice = 'Tidak ada jejak thinking dari model.';
+            }
 
             if (!previousTarget && thinkingState.targetText && thinkingState.animateOnOpen) {
                 stopThinkingAnimation(messageDiv);
@@ -1826,8 +1871,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     animateThinkingText(messageDiv);
                 } else {
                     stopThinkingAnimation(messageDiv);
-                    renderThinkingBody(messageDiv, thinkingState.targetText || thinkingState.renderedText);
+                    const displayText = thinkingState.targetText || thinkingState.renderedText;
+                    renderThinkingBody(messageDiv, displayText, thinkingState.emptyNotice);
                 }
+            } else if (thinkingState.emptyNotice) {
+                renderThinkingBody(messageDiv, '', thinkingState.emptyNotice);
             }
         } else {
             thinkingBox.hidden = true;
@@ -1838,6 +1886,7 @@ document.addEventListener('DOMContentLoaded', () => {
             thinkingState.expanded = false;
             thinkingState.hasOpenedOnce = false;
             thinkingState.animateOnOpen = false;
+            thinkingState.emptyNotice = '';
             thinkingState.placeholderIndex = 0;
             thinkingState.placeholderHold = 0;
             stopThinkingAnimation(messageDiv);
@@ -1883,6 +1932,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             <div class="thinking-body"></div>
                         </div>
                     </div>
+                    <div class="tool-activity" hidden></div>
                     <div class="message-bubble"></div>
                 </div>
             `;
@@ -1890,7 +1940,8 @@ document.addEventListener('DOMContentLoaded', () => {
             updateAssistantMessageState(messageDiv, {
                 content,
                 thinking: messageData.thinking || '',
-                pendingThinking: Boolean(messageData.pendingThinking)
+                pendingThinking: Boolean(messageData.pendingThinking),
+                forceThinking: Boolean(messageData.forceThinking)
             });
 
             if (typeof messageData.messageIndex === 'number') {
