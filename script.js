@@ -953,6 +953,12 @@ document.addEventListener('DOMContentLoaded', () => {
             .trim();
     }
 
+    function fallbackTitleFromMessage(message) {
+        const text = extractMessageText(message).trim();
+        if (!text) return '';
+        return text.split(/\s+/).slice(0, 6).join(' ');
+    }
+
     async function generateTitleIfNeeded() {
         if (!currentChatId) return;
         const convoMessages = currentMessages.filter(msg => msg.role === 'user' || msg.role === 'assistant');
@@ -974,6 +980,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({
                     model: getSelectedModel(),
                     stream: false,
+                    think: false,
                     messages: [
                         { role: 'system', content: systemPrompt },
                         convoMessages[0],
@@ -986,13 +993,43 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            const payload = await response.json();
-            const rawTitle = payload?.message?.content || payload?.response || '';
+            const contentType = response.headers.get('content-type') || '';
+            let rawTitle = '';
+
+            if (contentType.includes('application/json')) {
+                const payload = await response.json();
+                rawTitle = payload?.message?.content || payload?.response || '';
+            } else {
+                const rawText = await response.text();
+                if (rawText) {
+                    const lines = rawText.split('\n');
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                            const parsed = JSON.parse(line);
+                            const chunk = parsed?.message?.content || parsed?.response || '';
+                            if (chunk) rawTitle += chunk;
+                        } catch {
+                            // Ignore malformed lines.
+                        }
+                    }
+
+                    if (!rawTitle) {
+                        try {
+                            const parsed = JSON.parse(rawText);
+                            rawTitle = parsed?.message?.content || parsed?.response || '';
+                        } catch {
+                            // Ignore non-JSON fallback.
+                        }
+                    }
+                }
+            }
             const title = normalizeChatTitle(rawTitle);
 
-            if (!title) return;
+            const finalTitle = title || normalizeChatTitle(fallbackTitleFromMessage(convoMessages[0]));
+            if (!finalTitle) return;
 
-            chats[index].title = title;
+            chats[index].title = finalTitle;
             chats[index].titlePending = false;
             chats[index].updatedAt = new Date().toISOString();
             saveChats();
