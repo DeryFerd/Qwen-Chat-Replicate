@@ -57,6 +57,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return active ? active.getAttribute('data-model') : 'qwen3.5:397b-cloud';
     }
 
+    function getActiveModelOption() {
+        return document.querySelector('.model-option.active');
+    }
+
     function getModelMetaFromOption(option) {
         return {
             label: option?.getAttribute('data-label') || 'Qwen3.5 397B',
@@ -194,26 +198,42 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateThinkingToggleUI() {
         if (!thinkingToggleBtn) return;
         thinkingToggleBtn.classList.toggle('is-active', thinkingEnabled);
-        thinkingToggleBtn.innerHTML = thinkingEnabled
-            ? '<i class="ph ph-brain-filled"></i>'
-            : '<i class="ph ph-brain"></i>';
+        const icon = thinkingToggleBtn.querySelector('i');
+        if (icon) {
+            icon.className = thinkingEnabled ? 'ph ph-brain ph-fill' : 'ph ph-brain';
+        } else {
+            thinkingToggleBtn.innerHTML = '<i class="ph ph-brain"></i>';
+        }
         thinkingToggleBtn.title = thinkingEnabled ? 'Disable thinking (Ctrl+Shift+T)' : 'Enable thinking (Ctrl+Shift+T)';
     }
 
     function updateWebSearchToggleUI() {
         if (!webSearchToggleBtn) return;
         webSearchToggleBtn.classList.toggle('is-active', webSearchEnabled);
-        webSearchToggleBtn.innerHTML = webSearchEnabled
-            ? '<i class="ph ph-globe-filled"></i>'
-            : '<i class="ph ph-globe"></i>';
+        const icon = webSearchToggleBtn.querySelector('i');
+        if (icon) {
+            icon.className = webSearchEnabled ? 'ph ph-globe ph-fill' : 'ph ph-globe';
+        } else {
+            webSearchToggleBtn.innerHTML = '<i class="ph ph-globe"></i>';
+        }
         webSearchToggleBtn.title = webSearchEnabled ? 'Web search enabled (Ctrl+Shift+W)' : 'Web search disabled (Ctrl+Shift+W)';
     }
 
     function modelSupportsThinking(modelId) {
+        const option = getActiveModelOption();
+        const attr = option?.getAttribute('data-thinking');
+        if (attr !== null && attr !== undefined) {
+            return attr === 'true';
+        }
         return String(modelId || '').toLowerCase().includes('qwen3');
     }
 
     function modelSupportsVision(modelId) {
+        const option = getActiveModelOption();
+        const attr = option?.getAttribute('data-vision');
+        if (attr !== null && attr !== undefined) {
+            return attr === 'true';
+        }
         return String(modelId || '').toLowerCase().includes('vl');
     }
 
@@ -1228,12 +1248,14 @@ document.addEventListener('DOMContentLoaded', () => {
         clearAttachments();
 
         const selectedModelMeta = getActiveModelMeta();
+        const supportsThinking = modelSupportsThinking(getSelectedModel());
+        const enableThinking = thinkingEnabled && supportsThinking;
         let fullReply = '';
         let fullThinking = '';
 
         const assistantMessage = appendMessageDOM('assistant', '', {
             modelMeta: selectedModelMeta,
-            pendingThinking: true
+            pendingThinking: enableThinking
         });
         const controller = new AbortController();
         activeAbortController = controller;
@@ -1247,7 +1269,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             updateAssistantMessageState(assistantMessage, {
                 content: fullReply,
-                thinking: fullThinking,
+                thinking: enableThinking ? fullThinking : '',
                 pendingThinking: false
             });
 
@@ -1258,7 +1280,7 @@ document.addEventListener('DOMContentLoaded', () => {
             currentMessages.push({
                 role: 'assistant',
                 content: fullReply,
-                thinking: fullThinking,
+                thinking: enableThinking ? fullThinking : '',
                 modelMeta: selectedModelMeta
             });
             saveCurrentChat();
@@ -1280,11 +1302,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const requestPayload = {
                 model: getSelectedModel(),
                 messages: buildRequestMessages(),
-                stream: true
+                stream: true,
+                ...(supportsThinking ? { think: enableThinking } : {})
             };
-            if (thinkingEnabled) {
-                requestPayload.options = { thinking: true };
-            }
 
             const response = await fetch(CHAT_API_URL, {
                 method: 'POST',
@@ -1310,7 +1330,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (contentType.includes('application/json')) {
                 const payload = await response.json();
                 fullReply = payload?.message?.content || payload?.response || '';
-                fullThinking = payload?.message?.thinking || payload?.thinking || '';
+                fullThinking = enableThinking ? (payload?.message?.thinking || payload?.thinking || '') : '';
 
                 finalizeAssistantMessage();
                 return;
@@ -1343,7 +1363,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const role = parsed?.message?.role;
                         const isToolMessage = role === 'tool' || Boolean(toolName);
 
-                        if (thinkingToken && !isToolMessage) fullThinking += thinkingToken;
+                        if (thinkingToken && !isToolMessage && enableThinking) fullThinking += thinkingToken;
                         if (contentToken && !isToolMessage) fullReply += contentToken;
                         if (toolName) {
                             pendingToolMessages.push({
@@ -1355,8 +1375,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         updateAssistantMessageState(assistantMessage, {
                             content: fullReply,
-                            thinking: fullThinking,
-                            pendingThinking: true
+                            thinking: enableThinking ? fullThinking : '',
+                            pendingThinking: enableThinking
                         });
                     } catch {
                         // Ignore keep-alive or incomplete lines.
@@ -1371,7 +1391,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const thinkingToken = parsed?.message?.thinking || '';
                     const contentToken = parsed?.message?.content || '';
 
-                    if (thinkingToken) fullThinking += thinkingToken;
+                    if (thinkingToken && enableThinking) fullThinking += thinkingToken;
                     if (contentToken) fullReply += contentToken;
                 } catch {
                     // Ignore trailing non-JSON content.

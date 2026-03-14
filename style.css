@@ -1273,6 +1273,7 @@ ul {
     justify-content: center;
     border: 1px solid transparent;
     flex-shrink: 0;
+    align-self: center;
 }
 
 .toggle-btn.is-active {
