@@ -48,7 +48,8 @@ export default async (req) => {
   }
 
   try {
-    const result = await handleChatPayload(payload, process.env);
+    const disableWebSearch = Boolean(req.headers.get('x-disable-web-search'));
+    const result = await handleChatPayload(payload, process.env, { disableWebSearch });
 
     if (result.type === 'json') {
       return json(200, result.payload);

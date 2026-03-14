@@ -95,7 +95,10 @@ async function handleChatProxy(req, res) {
   }
 
   try {
-    const result = await handleChatPayload(payload, process.env);
+    const disableWebSearch = Boolean(req.headers['x-disable-web-search']);
+    const result = await handleChatPayload(payload, process.env, {
+      disableWebSearch
+    });
 
     if (result.type === 'json') {
       return sendJson(res, 200, result.payload);

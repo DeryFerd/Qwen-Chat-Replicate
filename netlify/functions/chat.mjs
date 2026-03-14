@@ -22,10 +22,11 @@ export default async (req) => {
   }
 
   try {
+    const disableWebSearch = Boolean(req.headers.get('x-disable-web-search'));
     const result = await handleChatPayload({
       ...payload,
       stream: false
-    }, process.env);
+    }, process.env, { disableWebSearch });
 
     return json(200, result.payload);
   } catch (error) {

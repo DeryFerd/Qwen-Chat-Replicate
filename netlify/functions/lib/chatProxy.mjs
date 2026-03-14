@@ -217,8 +217,8 @@ async function executeToolCalls(toolCalls, tavilyApiKey) {
   return toolMessages;
 }
 
-async function* createChatStream(payload, env) {
-  const toolsEnabled = Boolean(env.TAVILY_API_KEY);
+async function* createChatStream(payload, env, options = {}) {
+  const toolsEnabled = Boolean(env.TAVILY_API_KEY) && !options.disableWebSearch;
   const tools = toolsEnabled ? [WEB_SEARCH_TOOL] : undefined;
   let messages = buildMessages(payload.messages, toolsEnabled);
 
@@ -263,8 +263,8 @@ async function* createChatStream(payload, env) {
   throw new HttpError(500, 'Tool loop melebihi batas maksimum.');
 }
 
-async function runChatJson(payload, env) {
-  const toolsEnabled = Boolean(env.TAVILY_API_KEY);
+async function runChatJson(payload, env, options = {}) {
+  const toolsEnabled = Boolean(env.TAVILY_API_KEY) && !options.disableWebSearch;
   const tools = toolsEnabled ? [WEB_SEARCH_TOOL] : undefined;
   let messages = buildMessages(payload.messages, toolsEnabled);
 
@@ -300,7 +300,7 @@ async function runChatJson(payload, env) {
   throw new HttpError(500, 'Tool loop melebihi batas maksimum.');
 }
 
-export async function handleChatPayload(payload, env) {
+export async function handleChatPayload(payload, env, options = {}) {
   if (!env.OLLAMA_API_KEY) {
     throw new HttpError(500, 'OLLAMA_API_KEY belum diset di environment backend.');
   }
@@ -320,12 +320,12 @@ export async function handleChatPayload(payload, env) {
   if (payload.stream === false) {
     return {
       type: 'json',
-      payload: await runChatJson(payload, env)
+      payload: await runChatJson(payload, env, options)
     };
   }
 
   return {
     type: 'stream',
-    stream: createChatStream(payload, env)
+    stream: createChatStream(payload, env, options)
   };
 }

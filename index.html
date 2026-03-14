@@ -5,9 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Qwen Chat</title>
+    <meta name="theme-color" content="#0B0C10">
+    <link rel="manifest" href="/manifest.json">
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&display=swap"
         rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js/styles/github-dark.min.css">
     <!-- Phosphor Icons for high-quality SVG icons -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
 </head>
@@ -25,10 +28,18 @@
                 </a>
             </div>
 
-            <button class="new-chat-btn">
+            <button class="new-chat-btn" title="New Chat (Ctrl+N)">
                 <i class="ph ph-plus"></i>
                 <span>New Chat</span>
             </button>
+
+            <div class="sidebar-search">
+                <i class="ph ph-magnifying-glass sidebar-search-icon"></i>
+                <input type="text" id="chat-search-input" class="sidebar-search-input" placeholder="Search chats" title="Search chats (Ctrl+K)">
+                <button type="button" class="sidebar-search-clear" id="chat-search-clear" title="Clear search">
+                    <i class="ph ph-x"></i>
+                </button>
+            </div>
 
             <div class="sidebar-content">
                 <div class="history-section">
@@ -72,6 +83,12 @@
                 <button class="user-profile-btn">
                     <div class="avatar">U</div>
                     <span class="username">User</span>
+                </button>
+                <button class="footer-icon-btn" id="system-prompt-btn" title="System prompt (Ctrl+/)">
+                    <i class="ph ph-sliders"></i>
+                </button>
+                <button class="footer-icon-btn" id="install-app-btn" title="Install app" hidden>
+                    <i class="ph ph-download-simple"></i>
                 </button>
             </div>
         </aside>
@@ -119,6 +136,7 @@
                         </div>
                     </div>
                 </div>
+                <span class="system-prompt-indicator" id="system-prompt-indicator" title="Custom system prompt active" hidden></span>
             </header>
 
             <!-- Chat Area -->
@@ -170,13 +188,21 @@
 
             <!-- Input Area -->
             <div class="input-wrapper">
+                <div class="attachment-strip" id="attachment-strip" hidden></div>
                 <div class="input-container">
-                    <button class="attach-btn" title="Attach File">
+                    <button class="attach-btn" title="Attach image">
                         <i class="ph ph-paperclip"></i>
                     </button>
+                    <button class="toggle-btn" id="thinking-toggle-btn" title="Enable thinking (Ctrl+Shift+T)">
+                        <i class="ph ph-brain"></i>
+                    </button>
+                    <button class="toggle-btn" id="web-search-toggle-btn" title="Web search enabled (Ctrl+Shift+W)">
+                        <i class="ph ph-globe"></i>
+                    </button>
+                    <input type="file" id="image-input" accept="image/*" multiple hidden>
                     <textarea id="chat-input" placeholder="Message Qwen..." rows="1" class="chat-input"></textarea>
                     <div class="input-actions">
-                        <button class="voice-btn" title="Voice Input">
+                        <button class="voice-btn" title="Voice input">
                             <i class="ph ph-microphone"></i>
                         </button>
                         <button class="send-btn" id="send-btn" disabled>
@@ -200,11 +226,37 @@
                 </div>
             </div>
         </div>
+        <div class="modal-overlay" id="system-prompt-modal">
+            <div class="modal-content">
+                <h3>System Prompt</h3>
+                <p>Set a custom system prompt for this chat.</p>
+                <textarea id="system-prompt-textarea" class="system-prompt-textarea" placeholder="You are a helpful assistant..." maxlength="2000"></textarea>
+                <div class="system-prompt-footer">
+                    <span id="system-prompt-counter" class="system-prompt-counter">0 / 2000</span>
+                    <div class="modal-actions">
+                        <button class="modal-cancel-btn" id="system-prompt-reset-btn">Reset to default</button>
+                        <button class="modal-delete-btn" id="system-prompt-save-btn">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-overlay" id="shortcuts-modal">
+            <div class="modal-content">
+                <h3>Keyboard Shortcuts</h3>
+                <div class="shortcut-list">
+                    <div class="shortcut-row"><span>Focus sidebar search</span><span class="shortcut-key">Ctrl+K</span></div>
+                    <div class="shortcut-row"><span>New chat</span><span class="shortcut-key">Ctrl+N</span></div>
+                    <div class="shortcut-row"><span>System prompt editor</span><span class="shortcut-key">Ctrl+/</span></div>
+                    <div class="shortcut-row"><span>Toggle thinking</span><span class="shortcut-key">Ctrl+Shift+T</span></div>
+                    <div class="shortcut-row"><span>Toggle web search</span><span class="shortcut-key">Ctrl+Shift+W</span></div>
+                    <div class="shortcut-row"><span>Close modals/dropdowns</span><span class="shortcut-key">Esc</span></div>
+                </div>
+            </div>
+        </div>
 
         <script src="config.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js/styles/github-dark.min.css">
         <script src="https://cdn.jsdelivr.net/npm/highlight.js/lib/core.min.js"></script>
         <script src="script.js"></script>
 </body>

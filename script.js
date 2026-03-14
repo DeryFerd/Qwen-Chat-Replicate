@@ -11,8 +11,46 @@ document.addEventListener('DOMContentLoaded', () => {
     const welcomeScreen = document.getElementById('welcome-screen');
     const messagesContainer = document.getElementById('messages-container');
     const chatArea = document.getElementById('chat-area');
+    const attachmentStrip = document.getElementById('attachment-strip');
+    const imageInput = document.getElementById('image-input');
+    const attachBtn = document.querySelector('.attach-btn');
+    const voiceBtn = document.querySelector('.voice-btn');
+    const thinkingToggleBtn = document.getElementById('thinking-toggle-btn');
+    const webSearchToggleBtn = document.getElementById('web-search-toggle-btn');
+    const installAppBtn = document.getElementById('install-app-btn');
+    const systemPromptBtn = document.getElementById('system-prompt-btn');
+    const systemPromptModal = document.getElementById('system-prompt-modal');
+    const systemPromptTextarea = document.getElementById('system-prompt-textarea');
+    const systemPromptCounter = document.getElementById('system-prompt-counter');
+    const systemPromptSaveBtn = document.getElementById('system-prompt-save-btn');
+    const systemPromptResetBtn = document.getElementById('system-prompt-reset-btn');
+    const systemPromptIndicator = document.getElementById('system-prompt-indicator');
+    const shortcutsModal = document.getElementById('shortcuts-modal');
+    const sidebarSearchInput = document.getElementById('chat-search-input');
+    const sidebarSearchClear = document.getElementById('chat-search-clear');
 
     const CHAT_API_URL = '/api/chat';
+
+    // --- state management ---
+    let chats = JSON.parse(localStorage.getItem('qwen_chats') || '[]');
+    let currentChatId = null;
+    let currentMessages = [];
+    let botResponseTimeout = null;
+    let activeAbortController = null;
+    let attachedImages = [];
+    let speechRecognition = null;
+    let isListening = false;
+    let thinkingEnabled = false;
+    let webSearchEnabled = true;
+    let currentSystemPrompt = localStorage.getItem('qwen_system_prompt') || '';
+    let deferredInstallPrompt = null;
+    let sidebarSearchQuery = '';
+    let sidebarSearchDebounce = null;
+    const thinkingAnimationState = new WeakMap();
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js');
+    }
 
     function getSelectedModel() {
         const active = document.querySelector('.model-option.active');
@@ -129,8 +167,125 @@ document.addEventListener('DOMContentLoaded', () => {
             messageBubble.innerHTML = renderAssistantMarkdown(content);
             enhanceMarkdown(messageBubble);
         } else {
-            messageBubble.innerHTML = formatPlainText(content);
+            if (Array.isArray(content)) {
+                messageBubble.innerHTML = '';
+                content.forEach(item => {
+                    if (item?.type === 'image_url') {
+                        const img = document.createElement('img');
+                        img.className = 'attachment-inline';
+                        img.src = item?.image_url?.url || '';
+                        img.alt = 'Attachment';
+                        messageBubble.appendChild(img);
+                        return;
+                    }
+                    if (item?.type === 'text') {
+                        const textBlock = document.createElement('div');
+                        textBlock.className = 'user-text-block';
+                        textBlock.innerHTML = formatPlainText(item?.text || '');
+                        messageBubble.appendChild(textBlock);
+                    }
+                });
+            } else {
+                messageBubble.innerHTML = formatPlainText(content);
+            }
         }
+    }
+
+    function updateThinkingToggleUI() {
+        if (!thinkingToggleBtn) return;
+        thinkingToggleBtn.classList.toggle('is-active', thinkingEnabled);
+        thinkingToggleBtn.innerHTML = thinkingEnabled
+            ? '<i class="ph ph-brain-filled"></i>'
+            : '<i class="ph ph-brain"></i>';
+        thinkingToggleBtn.title = thinkingEnabled ? 'Disable thinking (Ctrl+Shift+T)' : 'Enable thinking (Ctrl+Shift+T)';
+    }
+
+    function updateWebSearchToggleUI() {
+        if (!webSearchToggleBtn) return;
+        webSearchToggleBtn.classList.toggle('is-active', webSearchEnabled);
+        webSearchToggleBtn.innerHTML = webSearchEnabled
+            ? '<i class="ph ph-globe-filled"></i>'
+            : '<i class="ph ph-globe"></i>';
+        webSearchToggleBtn.title = webSearchEnabled ? 'Web search enabled (Ctrl+Shift+W)' : 'Web search disabled (Ctrl+Shift+W)';
+    }
+
+    function modelSupportsThinking(modelId) {
+        return String(modelId || '').toLowerCase().includes('qwen3');
+    }
+
+    function modelSupportsVision(modelId) {
+        return String(modelId || '').toLowerCase().includes('vl');
+    }
+
+    function updateAttachmentAvailability() {
+        if (!attachBtn || !imageInput) return;
+        const modelId = getSelectedModel();
+        const supportsVision = modelSupportsVision(modelId);
+        attachBtn.classList.toggle('is-disabled', !supportsVision);
+        attachBtn.title = supportsVision ? 'Attach image' : 'Switch to Qwen3 VL to send images';
+        imageInput.disabled = !supportsVision;
+        if (!supportsVision && attachedImages.length) {
+            clearAttachments();
+        }
+    }
+
+    function renderAttachmentStrip() {
+        if (!attachmentStrip) return;
+
+        attachmentStrip.innerHTML = '';
+
+        if (!attachedImages.length) {
+            attachmentStrip.hidden = true;
+            return;
+        }
+
+        attachmentStrip.hidden = false;
+        attachedImages.forEach((item, index) => {
+            const card = document.createElement('div');
+            card.className = 'attachment-thumb';
+
+            const img = document.createElement('img');
+            img.src = item.dataUrl;
+            img.alt = item.name || 'Attachment';
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'attachment-remove';
+            removeBtn.innerHTML = '&times;';
+            removeBtn.addEventListener('click', () => {
+                attachedImages.splice(index, 1);
+                renderAttachmentStrip();
+            });
+
+            card.appendChild(img);
+            card.appendChild(removeBtn);
+            attachmentStrip.appendChild(card);
+        });
+    }
+
+    function buildUserMessageContent(text) {
+        if (!attachedImages.length) {
+            return text;
+        }
+
+        const parts = attachedImages.map(item => ({
+            type: 'image_url',
+            image_url: { url: item.dataUrl }
+        }));
+
+        if (text) {
+            parts.push({
+                type: 'text',
+                text
+            });
+        }
+
+        return parts;
+    }
+
+    function clearAttachments() {
+        attachedImages = [];
+        renderAttachmentStrip();
     }
 
     function truncateText(value, maxLength) {
@@ -278,6 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Add active class to clicked
             option.classList.add('active');
             syncSelectedModelDisplay(option);
+            updateModelDependentToggles();
 
             // Close dropdown
             modelSelector.classList.remove('open');
@@ -286,13 +442,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // --- state management ---
-    let chats = JSON.parse(localStorage.getItem('qwen_chats') || '[]');
-    let currentChatId = null;
-    let currentMessages = [];
-    let botResponseTimeout = null;
-    let activeAbortController = null;
-    const thinkingAnimationState = new WeakMap();
+    function updateModelDependentToggles() {
+        const modelId = getSelectedModel();
+        thinkingEnabled = modelSupportsThinking(modelId);
+        updateThinkingToggleUI();
+        updateAttachmentAvailability();
+    }
+
+    updateModelDependentToggles();
+    updateWebSearchToggleUI();
 
     // Elements
     const sidebarContent = document.querySelector('.sidebar-content');
@@ -400,14 +558,46 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('qwen_chats', JSON.stringify(chats));
     }
 
+    function extractMessageText(message) {
+        if (!message) return '';
+        if (Array.isArray(message.content)) {
+            return message.content
+                .filter(item => item?.type === 'text')
+                .map(item => item?.text || '')
+                .join(' ');
+        }
+        return message.content || '';
+    }
+
+    function highlightMatch(text, query) {
+        if (!query) return escapeHtml(text || '');
+        const safeText = text || '';
+        const escaped = escapeHtml(safeText);
+        const escapedQuery = escapeHtml(query);
+        const regex = new RegExp(`(${escapedQuery.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')})`, 'ig');
+        return escaped.replace(regex, '<mark>$1</mark>');
+    }
+
+    function filterChatsByQuery(items, query) {
+        if (!query) return items;
+        const lower = query.toLowerCase();
+        return items.filter(chat => {
+            const titleMatch = (chat.title || '').toLowerCase().includes(lower);
+            if (titleMatch) return true;
+            return (chat.messages || []).some(msg => extractMessageText(msg).toLowerCase().includes(lower));
+        });
+    }
+
     function renderSidebar() {
+        const filteredChats = filterChatsByQuery(chats, sidebarSearchQuery);
+
         // Group chats
         const now = new Date();
         const today = [];
         const yesterday = [];
         const previous = [];
 
-        chats.forEach(chat => {
+        filteredChats.forEach(chat => {
             const chatDate = new Date(chat.updatedAt);
             const diffTime = Math.abs(now - chatDate);
             const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -432,11 +622,12 @@ document.addEventListener('DOMContentLoaded', () => {
             let html = `<div class="history-section"><h3 class="section-title">${title}</h3><ul class="history-list">`;
             list.forEach(chat => {
                 const titleClass = chat.titlePending ? 'history-link-text title-pending' : 'history-link-text';
+                const renderedTitle = sidebarSearchQuery ? highlightMatch(chat.title || '', sidebarSearchQuery) : escapeHtml(chat.title || '');
                 html += `
                     <li>
                         <a href="#" class="history-item" data-id="${chat.id}">
                             <i class="ph ph-chat-teardrop-text"></i>
-                            <span class="${titleClass}">${chat.title}</span>
+                            <span class="${titleClass}">${renderedTitle}</span>
                             <button class="chat-options-btn" data-id="${chat.id}" title="Options">
                                 <i class="ph ph-dots-three"></i>
                             </button>
@@ -451,6 +642,14 @@ document.addEventListener('DOMContentLoaded', () => {
         sidebarContent.innerHTML += createSection('Today', today);
         sidebarContent.innerHTML += createSection('Yesterday', yesterday);
         sidebarContent.innerHTML += createSection('Previous 7 Days', previous);
+
+        if (sidebarSearchQuery && filteredChats.length === 0) {
+            sidebarContent.innerHTML = `
+                <div class="history-empty-state">
+                    <span>No results found</span>
+                </div>
+            `;
+        }
 
         // Bind clicks for loading chats
         document.querySelectorAll('.history-item').forEach(item => {
@@ -627,7 +826,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(CHAT_API_URL, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-Disable-Web-Search': 'true'
                 },
                 body: JSON.stringify({
                     model: getSelectedModel(),
@@ -660,8 +860,103 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function buildRequestMessages() {
+        const messages = currentMessages.map(message => {
+            if (message.role === 'tool') {
+                return {
+                    role: 'tool',
+                    tool_name: message.tool_name,
+                    content: message.content
+                };
+            }
+            return {
+                role: message.role,
+                content: message.content
+            };
+        });
+
+        if (currentSystemPrompt && currentSystemPrompt.trim()) {
+            return [
+                { role: 'system', content: currentSystemPrompt.trim() },
+                ...messages
+            ];
+        }
+
+        return messages;
+    }
+
+    function showOfflineNotice() {
+        const existing = document.querySelector('.offline-notice');
+        if (existing) return;
+
+        if (welcomeScreen.style.display !== 'none') {
+            welcomeScreen.style.display = 'none';
+            messagesContainer.style.display = 'flex';
+        }
+
+        const notice = document.createElement('div');
+        notice.className = 'offline-notice';
+        notice.textContent = 'You are offline. Reconnect to continue chatting.';
+        messagesContainer.appendChild(notice);
+    }
+
+    function updateSystemPromptIndicator() {
+        if (!systemPromptIndicator) return;
+        const hasPrompt = Boolean(currentSystemPrompt && currentSystemPrompt.trim());
+        systemPromptIndicator.hidden = !hasPrompt;
+        systemPromptIndicator.classList.toggle('is-active', hasPrompt);
+    }
+
+    function updateSystemPromptCounter() {
+        if (!systemPromptTextarea || !systemPromptCounter) return;
+        systemPromptCounter.textContent = `${systemPromptTextarea.value.length} / 2000`;
+    }
+
+    function openSystemPromptModal() {
+        if (!systemPromptModal || !systemPromptTextarea) return;
+        systemPromptTextarea.value = currentSystemPrompt || '';
+        updateSystemPromptCounter();
+        systemPromptModal.classList.add('show');
+        systemPromptTextarea.focus();
+    }
+
+    function closeSystemPromptModal() {
+        if (!systemPromptModal) return;
+        systemPromptModal.classList.remove('show');
+    }
+
     // Initialize sidebar
     renderSidebar();
+
+    if (sidebarSearchInput) {
+        sidebarSearchInput.addEventListener('input', () => {
+            if (sidebarSearchDebounce) {
+                clearTimeout(sidebarSearchDebounce);
+            }
+            sidebarSearchDebounce = setTimeout(() => {
+                sidebarSearchQuery = sidebarSearchInput.value.trim();
+                renderSidebar();
+            }, 300);
+
+            if (sidebarSearchInput.value.trim()) {
+                sidebarSearchClear.classList.add('show');
+            } else {
+                sidebarSearchClear.classList.remove('show');
+            }
+        });
+    }
+
+    if (sidebarSearchClear) {
+        sidebarSearchClear.addEventListener('click', () => {
+            sidebarSearchQuery = '';
+            if (sidebarSearchInput) {
+                sidebarSearchInput.value = '';
+                sidebarSearchInput.focus();
+            }
+            sidebarSearchClear.classList.remove('show');
+            renderSidebar();
+        });
+    }
 
     // New Chat functionality
     const newChatBtn = document.querySelector('.new-chat-btn');
@@ -683,9 +978,197 @@ document.addEventListener('DOMContentLoaded', () => {
             chatInput.value = '';
             chatInput.style.height = 'auto';
             sendBtn.setAttribute('disabled', 'true');
+            clearAttachments();
 
             if (window.innerWidth <= 768) {
                 toggleSidebar();
+            }
+        });
+    }
+
+    if (attachBtn && imageInput) {
+        attachBtn.addEventListener('click', () => {
+            if (attachBtn.classList.contains('is-disabled')) {
+                return;
+            }
+            imageInput.click();
+        });
+
+        imageInput.addEventListener('change', () => {
+            const files = Array.from(imageInput.files || []);
+            files.forEach(file => {
+                if (!file.type.startsWith('image/')) return;
+                const reader = new FileReader();
+                reader.onload = () => {
+                    attachedImages.push({
+                        name: file.name,
+                        dataUrl: reader.result
+                    });
+                    renderAttachmentStrip();
+                };
+                reader.readAsDataURL(file);
+            });
+            imageInput.value = '';
+        });
+    }
+
+    if (thinkingToggleBtn) {
+        thinkingToggleBtn.addEventListener('click', () => {
+            thinkingEnabled = !thinkingEnabled;
+            updateThinkingToggleUI();
+        });
+    }
+
+    if (webSearchToggleBtn) {
+        webSearchToggleBtn.addEventListener('click', () => {
+            webSearchEnabled = !webSearchEnabled;
+            updateWebSearchToggleUI();
+        });
+    }
+
+    function stopVoiceRecognition() {
+        if (!speechRecognition) return;
+        speechRecognition.stop();
+    }
+
+    function setVoiceListening(listening) {
+        isListening = listening;
+        if (voiceBtn) {
+            voiceBtn.classList.toggle('is-listening', listening);
+        }
+        chatInput.classList.toggle('is-interim', listening);
+    }
+
+    function initSpeechRecognition() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            if (voiceBtn) {
+                voiceBtn.title = 'Voice input not supported in this browser';
+            }
+            return null;
+        }
+
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        try {
+            recognition.lang = 'id-ID';
+        } catch {
+            recognition.lang = 'en-US';
+        }
+        recognition.onerror = () => {
+            setVoiceListening(false);
+        };
+        recognition.onend = () => {
+            setVoiceListening(false);
+        };
+        recognition.onresult = (event) => {
+            let interimTranscript = '';
+            let finalTranscript = '';
+            for (let i = event.resultIndex; i < event.results.length; i += 1) {
+                const transcript = event.results[i][0]?.transcript || '';
+                if (event.results[i].isFinal) {
+                    finalTranscript += transcript;
+                } else {
+                    interimTranscript += transcript;
+                }
+            }
+
+            const text = finalTranscript || interimTranscript;
+            chatInput.value = text.trim();
+            chatInput.dispatchEvent(new Event('input'));
+            if (finalTranscript) {
+                chatInput.classList.remove('is-interim');
+            } else {
+                chatInput.classList.add('is-interim');
+            }
+        };
+
+        return recognition;
+    }
+
+    async function requestMicrophoneAccess() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            return true;
+        }
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(track => track.stop());
+            return true;
+        } catch {
+            if (voiceBtn) {
+                voiceBtn.title = 'Microphone permission denied';
+            }
+            return false;
+        }
+    }
+
+    if (voiceBtn) {
+        speechRecognition = initSpeechRecognition();
+        voiceBtn.addEventListener('click', async () => {
+            if (!speechRecognition) {
+                return;
+            }
+
+            if (isListening) {
+                stopVoiceRecognition();
+                return;
+            }
+
+            setVoiceListening(true);
+            const allowed = await requestMicrophoneAccess();
+            if (!allowed) {
+                setVoiceListening(false);
+                return;
+            }
+
+            try {
+                speechRecognition.start();
+            } catch {
+                setVoiceListening(false);
+            }
+        });
+    }
+
+    updateSystemPromptIndicator();
+
+    if (systemPromptBtn) {
+        systemPromptBtn.addEventListener('click', openSystemPromptModal);
+    }
+
+    if (systemPromptTextarea) {
+        systemPromptTextarea.addEventListener('input', updateSystemPromptCounter);
+    }
+
+    if (systemPromptSaveBtn) {
+        systemPromptSaveBtn.addEventListener('click', () => {
+            currentSystemPrompt = systemPromptTextarea.value.trim();
+            if (currentSystemPrompt) {
+                localStorage.setItem('qwen_system_prompt', currentSystemPrompt);
+            } else {
+                localStorage.removeItem('qwen_system_prompt');
+            }
+            updateSystemPromptIndicator();
+            closeSystemPromptModal();
+        });
+    }
+
+    if (systemPromptResetBtn) {
+        systemPromptResetBtn.addEventListener('click', () => {
+            currentSystemPrompt = '';
+            if (systemPromptTextarea) {
+                systemPromptTextarea.value = '';
+                updateSystemPromptCounter();
+            }
+            localStorage.removeItem('qwen_system_prompt');
+            updateSystemPromptIndicator();
+        });
+    }
+
+    if (systemPromptModal) {
+        systemPromptModal.addEventListener('click', (event) => {
+            if (event.target === systemPromptModal) {
+                closeSystemPromptModal();
             }
         });
     }
@@ -726,7 +1209,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle sending message
     async function sendMessage() {
         const text = chatInput.value.trim();
-        if (!text) return;
+        if (!text && attachedImages.length === 0) return;
         if (activeAbortController) return;
 
         if (welcomeScreen.style.display !== 'none') {
@@ -734,13 +1217,15 @@ document.addEventListener('DOMContentLoaded', () => {
             messagesContainer.style.display = 'flex';
         }
 
-        currentMessages.push({ role: 'user', content: text });
-        appendMessageDOM('user', text);
+        const messageContent = buildUserMessageContent(text);
+        currentMessages.push({ role: 'user', content: messageContent });
+        appendMessageDOM('user', messageContent);
         saveCurrentChat();
 
         chatInput.value = '';
         chatInput.style.height = 'auto';
         sendBtn.setAttribute('disabled', 'true');
+        clearAttachments();
 
         const selectedModelMeta = getActiveModelMeta();
         let fullReply = '';
@@ -785,16 +1270,26 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         try {
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            if (!webSearchEnabled) {
+                headers['X-Disable-Web-Search'] = 'true';
+            }
+
+            const requestPayload = {
+                model: getSelectedModel(),
+                messages: buildRequestMessages(),
+                stream: true
+            };
+            if (thinkingEnabled) {
+                requestPayload.options = { thinking: true };
+            }
+
             const response = await fetch(CHAT_API_URL, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    model: getSelectedModel(),
-                    messages: currentMessages.map(({ role, content }) => ({ role, content })),
-                    stream: true
-                }),
+                headers,
+                body: JSON.stringify(requestPayload),
                 signal: controller.signal
             });
 
@@ -891,6 +1386,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            if (navigator && navigator.onLine === false) {
+                assistantMessage.remove();
+                showOfflineNotice();
+                return;
+            }
+
             assistantMessage.remove();
             let errorMsg = err.message || 'Terjadi error saat menghubungi server proxy.';
             if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
@@ -920,6 +1421,102 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+
+    function closeAllOverlays() {
+        if (systemPromptModal) systemPromptModal.classList.remove('show');
+        if (shortcutsModal) shortcutsModal.classList.remove('show');
+        if (modelSelector) modelSelector.classList.remove('open');
+        hideGlobalDropdown();
+        const deleteModal = document.getElementById('delete-modal');
+        if (deleteModal) deleteModal.classList.remove('show');
+    }
+
+    function openShortcutsModal() {
+        if (!shortcutsModal) return;
+        shortcutsModal.classList.add('show');
+    }
+
+    function isEditableTarget(target) {
+        if (!target) return false;
+        const tag = target.tagName;
+        return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
+    }
+
+    document.addEventListener('keydown', (event) => {
+        const key = event.key;
+        const targetIsEditable = isEditableTarget(event.target);
+
+        if (key === 'Escape') {
+            closeAllOverlays();
+            return;
+        }
+
+        if (key === '?' && !targetIsEditable) {
+            event.preventDefault();
+            openShortcutsModal();
+            return;
+        }
+
+        if (event.ctrlKey && key.toLowerCase() === 'k') {
+            event.preventDefault();
+            if (sidebarSearchInput) {
+                sidebarSearchInput.focus();
+            }
+            return;
+        }
+
+        if (event.ctrlKey && key.toLowerCase() === 'n') {
+            event.preventDefault();
+            newChatBtn?.click();
+            return;
+        }
+
+        if (event.ctrlKey && key === '/') {
+            event.preventDefault();
+            openSystemPromptModal();
+            return;
+        }
+
+        if (event.ctrlKey && event.shiftKey && key.toLowerCase() === 't') {
+            event.preventDefault();
+            thinkingEnabled = !thinkingEnabled;
+            updateThinkingToggleUI();
+            return;
+        }
+
+        if (event.ctrlKey && event.shiftKey && key.toLowerCase() === 'w') {
+            event.preventDefault();
+            webSearchEnabled = !webSearchEnabled;
+            updateWebSearchToggleUI();
+            return;
+        }
+    });
+
+    if (shortcutsModal) {
+        shortcutsModal.addEventListener('click', (event) => {
+            if (event.target === shortcutsModal) {
+                shortcutsModal.classList.remove('show');
+            }
+        });
+    }
+
+    window.addEventListener('beforeinstallprompt', (event) => {
+        event.preventDefault();
+        deferredInstallPrompt = event;
+        if (installAppBtn) {
+            installAppBtn.hidden = false;
+        }
+    });
+
+    if (installAppBtn) {
+        installAppBtn.addEventListener('click', async () => {
+            if (!deferredInstallPrompt) return;
+            deferredInstallPrompt.prompt();
+            await deferredInstallPrompt.userChoice;
+            deferredInstallPrompt = null;
+            installAppBtn.hidden = true;
+        });
+    }
 
     // Suggestion Cards Click
     const suggestionCards = document.querySelectorAll('.suggestion-card');
