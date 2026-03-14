@@ -28,6 +28,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const shortcutsModal = document.getElementById('shortcuts-modal');
     const sidebarSearchInput = document.getElementById('chat-search-input');
     const sidebarSearchClear = document.getElementById('chat-search-clear');
+    const brandLogo = document.querySelector('.brand-logo');
+    const brandName = document.querySelector('.brand-name');
+    const welcomeLogo = document.querySelector('.welcome-logo');
+    const welcomeTitle = document.querySelector('.welcome-title');
+    const welcomeSubtitle = document.querySelector('.welcome-subtitle');
+    const suggestionGrid = document.querySelector('.suggestion-grid');
 
     const CHAT_API_URL = '/api/chat';
 
@@ -65,7 +71,8 @@ document.addEventListener('DOMContentLoaded', () => {
         return {
             label: option?.getAttribute('data-label') || 'Qwen3.5 397B',
             logoSrc: option?.getAttribute('data-logo') || './assets/models/qwen.png',
-            logoAlt: option?.getAttribute('data-alt') || 'Qwen'
+            logoAlt: option?.getAttribute('data-alt') || 'Qwen',
+            brandName: option?.getAttribute('data-brand') || option?.getAttribute('data-label') || 'Qwen'
         };
     }
 
@@ -193,6 +200,74 @@ document.addEventListener('DOMContentLoaded', () => {
                 messageBubble.innerHTML = formatPlainText(content);
             }
         }
+    }
+
+    const SUGGESTION_SETS = {
+        coder: [
+            { icon: 'ph-code', title: 'Generate code', desc: 'for a REST API endpoint' },
+            { icon: 'ph-bug', title: 'Debug error', desc: 'from stack trace or logs' },
+            { icon: 'ph-brackets-curly', title: 'Refactor code', desc: 'to improve performance' },
+            { icon: 'ph-terminal', title: 'Explain code', desc: 'line by line in simple terms' }
+        ],
+        multimodal: [
+            { icon: 'ph-image', title: 'Describe image', desc: 'with key details and objects' },
+            { icon: 'ph-text-aa', title: 'Extract text', desc: 'from a screenshot or photo' },
+            { icon: 'ph-magnifying-glass-plus', title: 'Analyze diagram', desc: 'and summarize insights' },
+            { icon: 'ph-palette', title: 'Design critique', desc: 'for a UI mockup image' }
+        ],
+        general: [
+            { icon: 'ph-pencil-simple', title: 'Draft an email', desc: 'asking for a project update' },
+            { icon: 'ph-code', title: 'Write Python code', desc: 'to scrape a simple website' },
+            { icon: 'ph-lightbulb', title: 'Brainstorm ideas', desc: 'for a sci-fi short story' },
+            { icon: 'ph-book-open', title: 'Summarize', desc: 'the plot of inception' }
+        ]
+    };
+
+    function getModelCategory() {
+        const option = getActiveModelOption();
+        const category = option?.getAttribute('data-category');
+        if (category === 'coder' || category === 'multimodal') {
+            return category;
+        }
+        return 'general';
+    }
+
+    function renderSuggestions(category) {
+        if (!suggestionGrid) return;
+        const suggestions = SUGGESTION_SETS[category] || SUGGESTION_SETS.general;
+        suggestionGrid.innerHTML = suggestions.map((item) => `
+            <button class="suggestion-card">
+                <i class="ph ${item.icon} suggestions-icon"></i>
+                <div class="suggestion-text">
+                    <span class="suggestion-title">${escapeHtml(item.title)}</span>
+                    <span class="suggestion-desc">${escapeHtml(item.desc)}</span>
+                </div>
+            </button>
+        `).join('');
+    }
+
+    function updateBrandingUI(modelMeta) {
+        if (brandLogo) {
+            brandLogo.src = modelMeta.logoSrc;
+            brandLogo.alt = modelMeta.logoAlt || modelMeta.brandName || 'Model';
+        }
+        if (brandName) {
+            brandName.textContent = modelMeta.brandName;
+        }
+        if (welcomeLogo) {
+            welcomeLogo.src = modelMeta.logoSrc;
+            welcomeLogo.alt = modelMeta.logoAlt || modelMeta.brandName || 'Model';
+        }
+        if (welcomeTitle) {
+            welcomeTitle.textContent = `Hi, I'm ${modelMeta.brandName}`;
+        }
+        if (welcomeSubtitle) {
+            welcomeSubtitle.textContent = 'How can I help you today?';
+        }
+    }
+
+    function updateSuggestionsForModel() {
+        renderSuggestions(getModelCategory());
     }
 
     function updateThinkingToggleUI() {
@@ -444,7 +519,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    syncSelectedModelDisplay(document.querySelector('.model-option.active'));
+    const initialOption = document.querySelector('.model-option.active');
+    syncSelectedModelDisplay(initialOption);
+    updateBrandingUI(getModelMetaFromOption(initialOption));
+    updateSuggestionsForModel();
 
     modelOptions.forEach(option => {
         option.addEventListener('click', () => {
@@ -467,6 +545,8 @@ document.addEventListener('DOMContentLoaded', () => {
         thinkingEnabled = modelSupportsThinking(modelId);
         updateThinkingToggleUI();
         updateAttachmentAvailability();
+        updateBrandingUI(getActiveModelMeta());
+        updateSuggestionsForModel();
     }
 
     updateModelDependentToggles();
@@ -1538,17 +1618,18 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Suggestion Cards Click
-    const suggestionCards = document.querySelectorAll('.suggestion-card');
-    suggestionCards.forEach(card => {
-        card.addEventListener('click', () => {
-            const title = card.querySelector('.suggestion-title').textContent;
-            const desc = card.querySelector('.suggestion-desc').textContent;
-            chatInput.value = `${title} ${desc}`;
+    // Suggestion Cards Click (delegated)
+    if (suggestionGrid) {
+        suggestionGrid.addEventListener('click', (event) => {
+            const card = event.target.closest('.suggestion-card');
+            if (!card) return;
+            const title = card.querySelector('.suggestion-title')?.textContent || '';
+            const desc = card.querySelector('.suggestion-desc')?.textContent || '';
+            chatInput.value = `${title} ${desc}`.trim();
             chatInput.dispatchEvent(new Event('input')); // trigger resize and button state
             chatInput.focus();
         });
-    });
+    }
 
         messagesContainer.addEventListener('click', (e) => {
         const toggle = e.target.closest('.thinking-toggle');
