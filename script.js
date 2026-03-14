@@ -38,6 +38,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const shortcutsModal = document.getElementById('shortcuts-modal');
     const sidebarSearchInput = document.getElementById('chat-search-input');
     const sidebarSearchClear = document.getElementById('chat-search-clear');
+    const userProfileBtn = document.querySelector('.user-profile-btn');
+    const userNameLabel = document.querySelector('.username');
+    const userAvatar = document.querySelector('.avatar');
     const brandLogo = document.querySelector('.brand-logo');
     const brandName = document.querySelector('.brand-name');
     const welcomeLogo = document.querySelector('.welcome-logo');
@@ -66,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeTagFilter = null;
     let tagEditorChatId = null;
     let userMemories = [];
+    let currentUserProfile = { id: 'default', name: 'User' };
     const thinkingAnimationState = new WeakMap();
 
     if ('serviceWorker' in navigator) {
@@ -357,6 +361,53 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function slugifyUserId(name) {
+        const slug = String(name || '')
+            .toLowerCase()
+            .trim()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+        if (slug) return slug.slice(0, 40);
+        return `user-${Math.random().toString(16).slice(2, 10)}`;
+    }
+
+    function loadUserProfile() {
+        try {
+            const raw = JSON.parse(localStorage.getItem('qwen_user_profile') || '{}');
+            if (raw?.id && raw?.name) {
+                return {
+                    id: String(raw.id),
+                    name: String(raw.name)
+                };
+            }
+        } catch {
+            // Ignore malformed storage.
+        }
+
+        const fallback = { id: 'default', name: 'User' };
+        localStorage.setItem('qwen_user_profile', JSON.stringify(fallback));
+        return fallback;
+    }
+
+    function saveUserProfile(profile) {
+        if (!profile) return;
+        localStorage.setItem('qwen_user_profile', JSON.stringify(profile));
+    }
+
+    function updateUserProfileUI() {
+        if (userNameLabel) {
+            userNameLabel.textContent = currentUserProfile?.name || 'User';
+        }
+        if (userAvatar) {
+            const name = currentUserProfile?.name || 'U';
+            userAvatar.textContent = name.trim().charAt(0).toUpperCase() || 'U';
+        }
+    }
+
+    function getMemoryStorageKey(userId) {
+        return `qwen_user_memory_${userId || 'default'}`;
+    }
+
     function normalizeMemoryEntry(entry) {
         const text = String(entry?.text || '').trim().slice(0, 120);
         if (!text) return null;
@@ -368,18 +419,28 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function loadMemories() {
+        const userId = currentUserProfile?.id || 'default';
+        const storageKey = getMemoryStorageKey(userId);
+        const legacyRaw = localStorage.getItem('qwen_user_memory');
         try {
-            const raw = JSON.parse(localStorage.getItem('qwen_user_memory') || '[]');
+            const rawSource = localStorage.getItem(storageKey) || legacyRaw || '[]';
+            const raw = JSON.parse(rawSource || '[]');
             userMemories = Array.isArray(raw)
                 ? raw.map(normalizeMemoryEntry).filter(Boolean).slice(0, 20)
                 : [];
+            if (!localStorage.getItem(storageKey) && legacyRaw) {
+                localStorage.setItem(storageKey, JSON.stringify(userMemories));
+            }
         } catch {
             userMemories = [];
         }
     }
 
     function saveMemories() {
-        localStorage.setItem('qwen_user_memory', JSON.stringify(userMemories.slice(0, 20)));
+        const userId = currentUserProfile?.id || 'default';
+        const payload = JSON.stringify(userMemories.slice(0, 20));
+        localStorage.setItem(getMemoryStorageKey(userId), payload);
+        localStorage.setItem('qwen_user_memory', payload);
     }
 
     function isMemoryDuplicate(text) {
@@ -1600,6 +1661,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Initialize sidebar
+    currentUserProfile = loadUserProfile();
+    updateUserProfileUI();
     renderSidebar();
     loadMemories();
 
@@ -1859,6 +1922,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!chip) return;
             setActivePersona(chip.dataset.id);
         });
+
+        personaBar.addEventListener('wheel', (event) => {
+            if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+            personaBar.scrollLeft += event.deltaY;
+            event.preventDefault();
+        }, { passive: false });
     }
 
     if (memoryBtn) {
@@ -1912,6 +1981,25 @@ document.addEventListener('DOMContentLoaded', () => {
             saveMemories();
             renderMemoryList();
             updateMemoryCounter();
+        });
+    }
+
+    if (userProfileBtn) {
+        userProfileBtn.addEventListener('click', () => {
+            const nextName = prompt('Enter your name for memory personalization:', currentUserProfile?.name || 'User');
+            if (!nextName) return;
+            const trimmed = nextName.trim().slice(0, 40);
+            if (!trimmed) return;
+            currentUserProfile = {
+                id: slugifyUserId(trimmed),
+                name: trimmed
+            };
+            saveUserProfile(currentUserProfile);
+            updateUserProfileUI();
+            loadMemories();
+            if (memoryModal?.classList.contains('show')) {
+                renderMemoryList();
+            }
         });
     }
 
