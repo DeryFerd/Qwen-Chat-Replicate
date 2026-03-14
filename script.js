@@ -25,6 +25,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const systemPromptSaveBtn = document.getElementById('system-prompt-save-btn');
     const systemPromptResetBtn = document.getElementById('system-prompt-reset-btn');
     const systemPromptIndicator = document.getElementById('system-prompt-indicator');
+    const memoryBtn = document.getElementById('memory-btn');
+    const memoryModal = document.getElementById('memory-modal');
+    const memoryList = document.getElementById('memory-list');
+    const memoryEmpty = document.getElementById('memory-empty');
+    const memoryInput = document.getElementById('memory-input');
+    const memoryAddBtn = document.getElementById('memory-add-btn');
+    const memoryClearBtn = document.getElementById('memory-clear-btn');
+    const memoryCounter = document.getElementById('memory-counter');
+    const memoryCloseBtn = document.getElementById('memory-close-btn');
+    const personaBar = document.getElementById('persona-bar');
     const shortcutsModal = document.getElementById('shortcuts-modal');
     const sidebarSearchInput = document.getElementById('chat-search-input');
     const sidebarSearchClear = document.getElementById('chat-search-clear');
@@ -52,6 +62,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let deferredInstallPrompt = null;
     let sidebarSearchQuery = '';
     let sidebarSearchDebounce = null;
+    let activePersonaId = null;
+    let activeTagFilter = null;
+    let tagEditorChatId = null;
+    let userMemories = [];
     const thinkingAnimationState = new WeakMap();
 
     if ('serviceWorker' in navigator) {
@@ -223,6 +237,39 @@ document.addEventListener('DOMContentLoaded', () => {
         ]
     };
 
+    const PERSONAS = [
+        {
+            id: 'default',
+            label: 'Default',
+            icon: 'ph-sparkle',
+            prompt: ''
+        },
+        {
+            id: 'coder',
+            label: 'Coding Assistant',
+            icon: 'ph-code',
+            prompt: 'You are an expert software engineer. Be concise and precise. Always prefer code examples over long explanations. Use markdown for all code blocks.'
+        },
+        {
+            id: 'tutor',
+            label: 'Tutor',
+            icon: 'ph-graduation-cap',
+            prompt: 'You are a patient and encouraging tutor. Break down complex topics into simple steps. Ask clarifying questions when needed. Use analogies and examples.'
+        },
+        {
+            id: 'writer',
+            label: 'Creative Writer',
+            icon: 'ph-pencil-line',
+            prompt: 'You are a creative writing assistant. Be imaginative, expressive, and help craft compelling narratives, dialogue, and descriptions.'
+        },
+        {
+            id: 'analyst',
+            label: 'Analyst',
+            icon: 'ph-chart-line-up',
+            prompt: 'You are a sharp analytical thinker. Structure your responses clearly. Use bullet points, pros/cons lists, and data-driven reasoning. Be objective.'
+        }
+    ];
+
     function getModelCategory() {
         const option = getActiveModelOption();
         const category = option?.getAttribute('data-category');
@@ -272,6 +319,202 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateSuggestionsForModel() {
         renderSuggestions(getModelCategory());
+    }
+
+    function getPersonaById(id) {
+        return PERSONAS.find(persona => persona.id === id);
+    }
+
+    function renderPersonaBar() {
+        if (!personaBar) return;
+        personaBar.innerHTML = PERSONAS.map(persona => `
+            <button class="persona-chip${activePersonaId === persona.id ? ' is-active' : ''}" data-id="${persona.id}">
+                <i class="ph ${persona.icon}"></i>
+                <span>${persona.label}</span>
+            </button>
+        `).join('');
+    }
+
+    function setActivePersona(id) {
+        activePersonaId = id;
+        const persona = getPersonaById(id);
+        if (persona && systemPromptTextarea) {
+            systemPromptTextarea.value = persona.prompt;
+            updateSystemPromptCounter();
+        }
+        renderPersonaBar();
+        updateSystemPromptIndicator();
+    }
+
+    function syncPersonaFromTextarea() {
+        if (!systemPromptTextarea || !activePersonaId) return;
+        const persona = getPersonaById(activePersonaId);
+        const targetPrompt = persona?.prompt ?? '';
+        if (systemPromptTextarea.value !== targetPrompt) {
+            activePersonaId = null;
+            renderPersonaBar();
+            updateSystemPromptIndicator();
+        }
+    }
+
+    function normalizeMemoryEntry(entry) {
+        const text = String(entry?.text || '').trim().slice(0, 120);
+        if (!text) return null;
+        return {
+            id: String(entry?.id || `${Date.now()}-${Math.random().toString(16).slice(2)}`),
+            text,
+            createdAt: entry?.createdAt || new Date().toISOString()
+        };
+    }
+
+    function loadMemories() {
+        try {
+            const raw = JSON.parse(localStorage.getItem('qwen_user_memory') || '[]');
+            userMemories = Array.isArray(raw)
+                ? raw.map(normalizeMemoryEntry).filter(Boolean).slice(0, 20)
+                : [];
+        } catch {
+            userMemories = [];
+        }
+    }
+
+    function saveMemories() {
+        localStorage.setItem('qwen_user_memory', JSON.stringify(userMemories.slice(0, 20)));
+    }
+
+    function isMemoryDuplicate(text) {
+        const lowered = text.toLowerCase();
+        return userMemories.some(entry => {
+            const existing = entry.text.toLowerCase();
+            return existing.includes(lowered) || lowered.includes(existing);
+        });
+    }
+
+    function addMemoryText(text) {
+        const normalized = String(text || '').trim().slice(0, 120);
+        if (!normalized) return false;
+        if (isMemoryDuplicate(normalized)) return false;
+        if (userMemories.length >= 20) return false;
+
+        userMemories.unshift({
+            id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            text: normalized,
+            createdAt: new Date().toISOString()
+        });
+        saveMemories();
+        return true;
+    }
+
+    function renderMemoryList() {
+        if (!memoryList || !memoryEmpty) return;
+        memoryList.innerHTML = '';
+        if (!userMemories.length) {
+            memoryEmpty.hidden = false;
+            return;
+        }
+        memoryEmpty.hidden = true;
+        userMemories.forEach(entry => {
+            const chip = document.createElement('div');
+            chip.className = 'memory-chip';
+            chip.innerHTML = `
+                <span>${escapeHtml(entry.text)}</span>
+                <button type="button" data-id="${entry.id}" title="Remove">&times;</button>
+            `;
+            memoryList.appendChild(chip);
+        });
+    }
+
+    function updateMemoryCounter() {
+        if (!memoryCounter || !memoryInput) return;
+        memoryCounter.textContent = `${memoryInput.value.length} / 120`;
+    }
+
+    function submitMemoryInput() {
+        if (!memoryInput) return;
+        const value = memoryInput.value.trim();
+        if (!value) return;
+        const added = addMemoryText(value);
+        if (added) {
+            memoryInput.value = '';
+            updateMemoryCounter();
+            renderMemoryList();
+        }
+    }
+
+    function openMemoryModal() {
+        if (!memoryModal) return;
+        renderMemoryList();
+        updateMemoryCounter();
+        memoryModal.classList.add('show');
+        memoryInput?.focus();
+    }
+
+    function closeMemoryModal() {
+        if (!memoryModal) return;
+        memoryModal.classList.remove('show');
+    }
+
+    async function extractMemoryFromLastTurn() {
+        const lastUser = [...currentMessages].reverse().find(msg => msg.role === 'user');
+        const lastAssistant = [...currentMessages].reverse().find(msg => msg.role === 'assistant');
+        if (!lastUser || !lastAssistant) return;
+
+        const systemPrompt = 'You are a memory extraction assistant. Given the conversation, extract 0-3 SHORT factual statements about the USER ONLY (not the AI) that are worth remembering long-term (name, profession, preferences, goals, location, etc). Return ONLY a JSON array of strings, no explanation, no markdown. Example: ["User is a software engineer", "User prefers dark mode"]. If nothing is worth remembering, return [].';
+
+        try {
+            const response = await fetch(CHAT_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Disable-Web-Search': 'true'
+                },
+                body: JSON.stringify({
+                    model: getSelectedModel(),
+                    stream: false,
+                    think: false,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        lastUser,
+                        lastAssistant
+                    ]
+                })
+            });
+
+            if (!response.ok) return;
+            const contentType = response.headers.get('content-type') || '';
+            let raw = '';
+
+            if (contentType.includes('application/json')) {
+                const payload = await response.json();
+                raw = payload?.message?.content || payload?.response || '';
+            } else {
+                raw = await response.text();
+            }
+
+            let extracted = [];
+            if (raw) {
+                try {
+                    extracted = JSON.parse(raw);
+                } catch {
+                    extracted = [];
+                }
+            }
+
+            if (!Array.isArray(extracted)) return;
+            let changed = false;
+            for (const item of extracted) {
+                if (userMemories.length >= 20) break;
+                if (typeof item !== 'string') continue;
+                const added = addMemoryText(item);
+                if (added) changed = true;
+            }
+
+            if (changed && memoryModal?.classList.contains('show')) {
+                renderMemoryList();
+            }
+        } catch {
+            // Silent failure
+        }
     }
 
     function updateThinkingToggleUI() {
@@ -596,6 +839,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeDropdownId = null;
     let chatToDeleteId = null;
     let globalDropdown = document.getElementById('global-chat-options-dropdown');
+    let tagEditor = document.getElementById('tag-editor');
+    let tagEditorTags = null;
+    let tagEditorInput = null;
+    let tagEditorAddBtn = null;
 
     if (!globalDropdown) {
         globalDropdown = document.createElement('div');
@@ -617,11 +864,33 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button class="download-json-option" id="global-download-json-btn"><i class="ph ph-file-code"></i>.json</button>
                 </div>
             </div>
+            <button class="chat-option-item tag-option" id="global-tag-btn">
+                <i class="ph ph-tag"></i> Tag
+            </button>
             <button class="chat-option-item delete-option" id="global-delete-btn">
                 <i class="ph ph-trash"></i> Delete
             </button>
         `;
         document.body.appendChild(globalDropdown);
+
+        if (!tagEditor) {
+            tagEditor = document.createElement('div');
+            tagEditor.id = 'tag-editor';
+            tagEditor.className = 'tag-editor global-overlay';
+            tagEditor.innerHTML = `
+                <div class="tag-editor-row" id="tag-editor-tags"></div>
+                <div class="tag-editor-input">
+                    <input type="text" id="tag-editor-input" maxlength="20" placeholder="Add tag">
+                    <button class="tag-editor-add" id="tag-editor-add-btn" title="Add tag">
+                        <i class="ph ph-plus"></i>
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(tagEditor);
+        }
+        tagEditorTags = tagEditor.querySelector('#tag-editor-tags');
+        tagEditorInput = tagEditor.querySelector('#tag-editor-input');
+        tagEditorAddBtn = tagEditor.querySelector('#tag-editor-add-btn');
 
         // Bind global actions
         document.getElementById('global-rename-btn').addEventListener('click', (e) => {
@@ -655,6 +924,14 @@ document.addEventListener('DOMContentLoaded', () => {
             hideGlobalDropdown();
         });
 
+        document.getElementById('global-tag-btn').addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            if (!activeDropdownId) return;
+            const rect = globalDropdown.getBoundingClientRect();
+            openTagEditor(activeDropdownId, rect);
+            hideGlobalDropdown();
+        });
+
         document.getElementById('global-delete-btn').addEventListener('click', (e) => {
             e.preventDefault(); e.stopPropagation();
             if (!activeDropdownId) return;
@@ -679,9 +956,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Hide on outside click for dropdown
         document.addEventListener('click', (e) => {
-            if (!e.target.closest('.chat-options-btn') && !e.target.closest('#global-chat-options-dropdown')) {
+            const insideDropdown = e.target.closest('.chat-options-btn') || e.target.closest('#global-chat-options-dropdown');
+            const insideTagEditor = e.target.closest('.tag-editor');
+            if (!insideDropdown) {
                 hideGlobalDropdown();
             }
+            if (!insideTagEditor && !insideDropdown) {
+                closeTagEditor();
+            }
+        });
+    }
+
+    if (tagEditorTags) {
+        tagEditorTags.addEventListener('click', (event) => {
+            const removeBtn = event.target.closest('button[data-tag]');
+            if (!removeBtn || !tagEditorChatId) return;
+            removeTagFromChat(tagEditorChatId, removeBtn.dataset.tag);
+        });
+    }
+
+    if (tagEditorInput) {
+        tagEditorInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                submitTagEditorInput();
+            }
+        });
+    }
+
+    if (tagEditorAddBtn) {
+        tagEditorAddBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            submitTagEditorInput();
         });
     }
 
@@ -689,6 +995,100 @@ document.addEventListener('DOMContentLoaded', () => {
         globalDropdown.classList.remove('show');
         document.querySelectorAll('.history-item.menu-open').forEach(el => el.classList.remove('menu-open'));
         activeDropdownId = null;
+    }
+
+    function closeTagEditor() {
+        if (!tagEditor) return;
+        tagEditor.classList.remove('show');
+        tagEditorChatId = null;
+    }
+
+    function renderTagEditor(chatId) {
+        if (!tagEditorTags) return;
+        const chat = chats.find(c => c.id === chatId);
+        const tags = chat ? getChatTags(chat) : [];
+        tagEditorTags.innerHTML = '';
+
+        if (!tags.length) {
+            const empty = document.createElement('span');
+            empty.className = 'tag-editor-empty';
+            empty.textContent = 'No tags yet';
+            tagEditorTags.appendChild(empty);
+            return;
+        }
+
+        tags.forEach(tag => {
+            const chip = document.createElement('div');
+            chip.className = `tag-editor-chip tag-color-${getTagColorIndex(tag)}`;
+            const label = document.createElement('span');
+            label.textContent = tag;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.dataset.tag = tag;
+            remove.innerHTML = '&times;';
+            remove.title = 'Remove tag';
+            chip.appendChild(label);
+            chip.appendChild(remove);
+            tagEditorTags.appendChild(chip);
+        });
+    }
+
+    function addTagToChat(chatId, tagValue) {
+        const chat = chats.find(c => c.id === chatId);
+        if (!chat) return;
+        const normalized = normalizeTagValue(tagValue);
+        if (!normalized) return;
+
+        const tags = getChatTags(chat);
+        if (tags.length >= 5) return;
+        if (tags.some(tag => tag.toLowerCase() === normalized.toLowerCase())) return;
+
+        chat.tags = [...tags, normalized];
+        saveChats();
+        renderSidebar();
+        renderTagEditor(chatId);
+    }
+
+    function removeTagFromChat(chatId, tagValue) {
+        const chat = chats.find(c => c.id === chatId);
+        if (!chat) return;
+        const lower = String(tagValue || '').toLowerCase();
+        chat.tags = getChatTags(chat).filter(tag => tag.toLowerCase() !== lower);
+        saveChats();
+        renderSidebar();
+        renderTagEditor(chatId);
+    }
+
+    function submitTagEditorInput() {
+        if (!tagEditorInput || !tagEditorChatId) return;
+        const value = tagEditorInput.value;
+        addTagToChat(tagEditorChatId, value);
+        tagEditorInput.value = '';
+    }
+
+    function openTagEditor(chatId, anchorRect) {
+        if (!tagEditor) return;
+        tagEditorChatId = chatId;
+        renderTagEditor(chatId);
+        tagEditor.classList.add('show');
+
+        if (anchorRect) {
+            const editorRect = tagEditor.getBoundingClientRect();
+            let left = anchorRect.left;
+            let top = anchorRect.bottom + 6;
+            if (left + editorRect.width > window.innerWidth - 8) {
+                left = window.innerWidth - editorRect.width - 8;
+            }
+            if (left < 8) left = 8;
+            if (top + editorRect.height > window.innerHeight - 8) {
+                top = anchorRect.top - editorRect.height - 6;
+            }
+            if (top < 8) top = 8;
+            tagEditor.style.left = `${left}px`;
+            tagEditor.style.top = `${top}px`;
+        }
+
+        tagEditorInput?.focus();
     }
 
     function saveChats() {
@@ -704,6 +1104,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 .join(' ');
         }
         return message.content || '';
+    }
+
+    function getChatTags(chat) {
+        return Array.isArray(chat?.tags) ? chat.tags : [];
+    }
+
+    function normalizeTagValue(value) {
+        return String(value || '').trim().slice(0, 20);
+    }
+
+    function getTagColorIndex(tag) {
+        let hash = 0;
+        for (let i = 0; i < tag.length; i += 1) {
+            hash = ((hash << 5) - hash) + tag.charCodeAt(i);
+            hash |= 0;
+        }
+        return Math.abs(hash) % 6;
+    }
+
+    function getAllTags(items) {
+        const tagSet = new Set();
+        items.forEach(chat => {
+            getChatTags(chat).forEach(tag => tagSet.add(tag));
+        });
+        return Array.from(tagSet);
     }
 
     function highlightMatch(text, query) {
@@ -726,7 +1151,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderSidebar() {
-        const filteredChats = filterChatsByQuery(chats, sidebarSearchQuery);
+        const allTags = getAllTags(chats);
+        if (activeTagFilter && !allTags.includes(activeTagFilter)) {
+            activeTagFilter = null;
+        }
+
+        const queryFiltered = filterChatsByQuery(chats, sidebarSearchQuery);
+        const filteredChats = activeTagFilter
+            ? queryFiltered.filter(chat => getChatTags(chat).includes(activeTagFilter))
+            : queryFiltered;
 
         // Group chats
         const now = new Date();
@@ -752,7 +1185,29 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
+        const tagBarHtml = allTags.length
+            ? `<div class="tag-filter-bar">${allTags.map(tag => {
+                const encodedTag = encodeURIComponent(tag);
+                const activeClass = activeTagFilter === tag ? ' is-active' : '';
+                return `<button class="tag-filter-chip${activeClass}" data-tag="${encodedTag}">${escapeHtml(tag)}</button>`;
+            }).join('')}</div>`
+            : '';
+
         sidebarContent.innerHTML = '';
+        if (tagBarHtml) {
+            sidebarContent.innerHTML += tagBarHtml;
+        }
+
+        const shouldShowEmpty = filteredChats.length === 0 && (sidebarSearchQuery || activeTagFilter);
+        if (shouldShowEmpty) {
+            sidebarContent.innerHTML += `
+                <div class="history-empty-state">
+                    <span>No results found</span>
+                </div>
+            `;
+            bindTagFilterEvents();
+            return;
+        }
 
         function createSection(title, list) {
             if (list.length === 0) return '';
@@ -760,11 +1215,21 @@ document.addEventListener('DOMContentLoaded', () => {
             list.forEach(chat => {
                 const titleClass = chat.titlePending ? 'history-link-text title-pending' : 'history-link-text';
                 const renderedTitle = sidebarSearchQuery ? highlightMatch(chat.title || '', sidebarSearchQuery) : escapeHtml(chat.title || '');
+                const chatTags = getChatTags(chat);
+                const tagMarkup = chatTags.length
+                    ? `<div class="history-tags">${chatTags.map(tag => {
+                        const colorIndex = getTagColorIndex(tag);
+                        return `<span class="history-tag tag-color-${colorIndex}">${escapeHtml(tag)}</span>`;
+                    }).join('')}</div>`
+                    : '';
                 html += `
                     <li>
                         <a href="#" class="history-item" data-id="${chat.id}">
                             <i class="ph ph-chat-teardrop-text"></i>
-                            <span class="${titleClass}">${renderedTitle}</span>
+                            <div class="history-text">
+                                <span class="${titleClass}">${renderedTitle}</span>
+                                ${tagMarkup}
+                            </div>
                             <button class="chat-options-btn" data-id="${chat.id}" title="Options">
                                 <i class="ph ph-dots-three"></i>
                             </button>
@@ -780,13 +1245,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sidebarContent.innerHTML += createSection('Yesterday', yesterday);
         sidebarContent.innerHTML += createSection('Previous 7 Days', previous);
 
-        if (sidebarSearchQuery && filteredChats.length === 0) {
-            sidebarContent.innerHTML = `
-                <div class="history-empty-state">
-                    <span>No results found</span>
-                </div>
-            `;
-        }
+        bindTagFilterEvents();
 
         // Bind clicks for loading chats
         document.querySelectorAll('.history-item').forEach(item => {
@@ -811,6 +1270,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (activeDropdownId === id && globalDropdown.classList.contains('show')) {
                     hideGlobalDropdown();
                 } else {
+                    closeTagEditor();
                     hideGlobalDropdown();
                     activeDropdownId = id;
                     historyItem.classList.add('menu-open');
@@ -820,6 +1280,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     globalDropdown.style.left = `${rect.left}px`;
                     globalDropdown.classList.add('show');
                 }
+            });
+        });
+    }
+
+    function bindTagFilterEvents() {
+        if (!sidebarContent) return;
+        sidebarContent.querySelectorAll('.tag-filter-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                const encoded = chip.getAttribute('data-tag') || '';
+                const tag = decodeURIComponent(encoded);
+                if (activeTagFilter === tag) {
+                    activeTagFilter = null;
+                } else {
+                    activeTagFilter = tag;
+                }
+                renderSidebar();
             });
         });
     }
@@ -926,6 +1402,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 titlePending: true,
                 messages: currentMessages,
                 modelId: getSelectedModel(),
+                tags: [],
                 updatedAt: new Date().toISOString()
             };
             chats.unshift(newChat); // add to top
@@ -1054,11 +1531,20 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         });
 
+        const memoryBlock = userMemories.length
+            ? `You have the following memory about the user:\n${userMemories.map(entry => `- ${entry.text}`).join('\n')}`
+            : '';
+
         if (currentSystemPrompt && currentSystemPrompt.trim()) {
-            return [
-                { role: 'system', content: currentSystemPrompt.trim() },
-                ...messages
-            ];
+            const systemMessages = [{ role: 'system', content: currentSystemPrompt.trim() }];
+            if (memoryBlock) {
+                systemMessages.push({ role: 'system', content: memoryBlock });
+            }
+            return [...systemMessages, ...messages];
+        }
+
+        if (memoryBlock) {
+            return [{ role: 'system', content: memoryBlock }, ...messages];
         }
 
         return messages;
@@ -1084,6 +1570,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const hasPrompt = Boolean(currentSystemPrompt && currentSystemPrompt.trim());
         systemPromptIndicator.hidden = !hasPrompt;
         systemPromptIndicator.classList.toggle('is-active', hasPrompt);
+        const persona = getPersonaById(activePersonaId);
+        if (persona && persona.prompt && hasPrompt) {
+            systemPromptIndicator.innerHTML = `<i class="ph ${persona.icon}"></i>`;
+            systemPromptIndicator.classList.add('has-icon');
+        } else {
+            systemPromptIndicator.innerHTML = '';
+            systemPromptIndicator.classList.remove('has-icon');
+        }
     }
 
     function updateSystemPromptCounter() {
@@ -1095,6 +1589,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!systemPromptModal || !systemPromptTextarea) return;
         systemPromptTextarea.value = currentSystemPrompt || '';
         updateSystemPromptCounter();
+        renderPersonaBar();
         systemPromptModal.classList.add('show');
         systemPromptTextarea.focus();
     }
@@ -1106,6 +1601,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize sidebar
     renderSidebar();
+    loadMemories();
 
     if (sidebarSearchInput) {
         sidebarSearchInput.addEventListener('input', () => {
@@ -1316,7 +1812,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (systemPromptTextarea) {
-        systemPromptTextarea.addEventListener('input', updateSystemPromptCounter);
+        systemPromptTextarea.addEventListener('input', () => {
+            updateSystemPromptCounter();
+            syncPersonaFromTextarea();
+        });
     }
 
     if (systemPromptSaveBtn) {
@@ -1335,11 +1834,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (systemPromptResetBtn) {
         systemPromptResetBtn.addEventListener('click', () => {
             currentSystemPrompt = '';
+            activePersonaId = null;
             if (systemPromptTextarea) {
                 systemPromptTextarea.value = '';
                 updateSystemPromptCounter();
             }
             localStorage.removeItem('qwen_system_prompt');
+            renderPersonaBar();
             updateSystemPromptIndicator();
         });
     }
@@ -1349,6 +1850,68 @@ document.addEventListener('DOMContentLoaded', () => {
             if (event.target === systemPromptModal) {
                 closeSystemPromptModal();
             }
+        });
+    }
+
+    if (personaBar) {
+        personaBar.addEventListener('click', (event) => {
+            const chip = event.target.closest('.persona-chip');
+            if (!chip) return;
+            setActivePersona(chip.dataset.id);
+        });
+    }
+
+    if (memoryBtn) {
+        memoryBtn.addEventListener('click', openMemoryModal);
+    }
+
+    if (memoryCloseBtn) {
+        memoryCloseBtn.addEventListener('click', closeMemoryModal);
+    }
+
+    if (memoryModal) {
+        memoryModal.addEventListener('click', (event) => {
+            if (event.target === memoryModal) {
+                closeMemoryModal();
+            }
+        });
+    }
+
+    if (memoryInput) {
+        memoryInput.addEventListener('input', updateMemoryCounter);
+        memoryInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                submitMemoryInput();
+            }
+        });
+    }
+
+    if (memoryAddBtn) {
+        memoryAddBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            submitMemoryInput();
+        });
+    }
+
+    if (memoryList) {
+        memoryList.addEventListener('click', (event) => {
+            const removeBtn = event.target.closest('button[data-id]');
+            if (!removeBtn) return;
+            userMemories = userMemories.filter(entry => entry.id !== removeBtn.dataset.id);
+            saveMemories();
+            renderMemoryList();
+        });
+    }
+
+    if (memoryClearBtn) {
+        memoryClearBtn.addEventListener('click', () => {
+            if (!userMemories.length) return;
+            if (!confirm('Clear all memories?')) return;
+            userMemories = [];
+            saveMemories();
+            renderMemoryList();
+            updateMemoryCounter();
         });
     }
 
@@ -1457,6 +2020,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!aborted) {
                 generateTitleIfNeeded();
             }
+            extractMemoryFromLastTurn();
         };
 
         try {
@@ -1618,9 +2182,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function closeAllOverlays() {
         if (systemPromptModal) systemPromptModal.classList.remove('show');
+        if (memoryModal) memoryModal.classList.remove('show');
         if (shortcutsModal) shortcutsModal.classList.remove('show');
         if (modelSelector) modelSelector.classList.remove('open');
         hideGlobalDropdown();
+        closeTagEditor();
         const deleteModal = document.getElementById('delete-modal');
         if (deleteModal) deleteModal.classList.remove('show');
     }
@@ -1668,6 +2234,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.ctrlKey && key === '/') {
             event.preventDefault();
             openSystemPromptModal();
+            return;
+        }
+
+        if (event.ctrlKey && event.shiftKey && key.toLowerCase() === 'm') {
+            event.preventDefault();
+            openMemoryModal();
             return;
         }
 

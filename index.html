@@ -87,6 +87,9 @@
                 <button class="footer-icon-btn" id="system-prompt-btn" title="System prompt (Ctrl+/)">
                     <i class="ph ph-sliders"></i>
                 </button>
+                <button class="footer-icon-btn" id="memory-btn" title="User memory (Ctrl+Shift+M)">
+                    <i class="ph ph-brain"></i>
+                </button>
                 <button class="footer-icon-btn" id="install-app-btn" title="Install app" hidden>
                     <i class="ph ph-download-simple"></i>
                 </button>
@@ -230,6 +233,7 @@
             <div class="modal-content">
                 <h3>System Prompt</h3>
                 <p>Set a custom system prompt for this chat.</p>
+                <div class="persona-bar" id="persona-bar"></div>
                 <textarea id="system-prompt-textarea" class="system-prompt-textarea" placeholder="You are a helpful assistant..." maxlength="2000"></textarea>
                 <div class="system-prompt-footer">
                     <span id="system-prompt-counter" class="system-prompt-counter">0 / 2000</span>
@@ -247,9 +251,31 @@
                     <div class="shortcut-row"><span>Focus sidebar search</span><span class="shortcut-key">Ctrl+K</span></div>
                     <div class="shortcut-row"><span>New chat</span><span class="shortcut-key">Ctrl+N</span></div>
                     <div class="shortcut-row"><span>System prompt editor</span><span class="shortcut-key">Ctrl+/</span></div>
+                    <div class="shortcut-row"><span>User memory</span><span class="shortcut-key">Ctrl+Shift+M</span></div>
                     <div class="shortcut-row"><span>Toggle thinking</span><span class="shortcut-key">Ctrl+Shift+T</span></div>
                     <div class="shortcut-row"><span>Toggle web search</span><span class="shortcut-key">Ctrl+Shift+W</span></div>
                     <div class="shortcut-row"><span>Close modals/dropdowns</span><span class="shortcut-key">Esc</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-overlay" id="memory-modal">
+            <div class="modal-content">
+                <button class="modal-close-btn" id="memory-close-btn" title="Close">
+                    <i class="ph ph-x"></i>
+                </button>
+                <h3>User Memory</h3>
+                <p>Facts the AI remembers about you across all chats</p>
+                <div class="memory-list" id="memory-list"></div>
+                <div class="memory-empty" id="memory-empty">No memories yet. AI will remember things you tell it.</div>
+                <div class="memory-input-row">
+                    <input type="text" id="memory-input" maxlength="120" placeholder="Add a memory (max 120 chars)">
+                    <button class="memory-add-btn" id="memory-add-btn" title="Add memory">
+                        <i class="ph ph-plus"></i>
+                    </button>
+                </div>
+                <div class="memory-footer">
+                    <button class="modal-cancel-btn" id="memory-clear-btn">Clear all</button>
+                    <span class="memory-counter" id="memory-counter">0 / 120</span>
                 </div>
             </div>
         </div>
