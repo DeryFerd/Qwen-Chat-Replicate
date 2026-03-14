@@ -264,6 +264,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (welcomeSubtitle) {
             welcomeSubtitle.textContent = 'How can I help you today?';
         }
+        if (chatInput) {
+            const brandLabel = modelMeta.brandName || modelMeta.label || 'Qwen';
+            chatInput.placeholder = `Message ${brandLabel}...`;
+        }
     }
 
     function updateSuggestionsForModel() {
@@ -537,19 +541,39 @@ document.addEventListener('DOMContentLoaded', () => {
     updateBrandingUI(getModelMetaFromOption(initialOption));
     updateSuggestionsForModel();
 
+    function updateCurrentChatModel(modelId) {
+        if (!currentChatId) return;
+        const index = chats.findIndex(c => c.id === currentChatId);
+        if (index === -1) return;
+        chats[index].modelId = modelId;
+        saveChats();
+        renderSidebar();
+    }
+
+    function setActiveModelOption(option, { persist = false } = {}) {
+        if (!option) return;
+        modelOptions.forEach(opt => opt.classList.remove('active'));
+        option.classList.add('active');
+        syncSelectedModelDisplay(option);
+        updateModelDependentToggles();
+
+        if (persist) {
+            updateCurrentChatModel(option.getAttribute('data-model'));
+        }
+    }
+
+    function setActiveModelById(modelId, { persist = false } = {}) {
+        if (!modelId) return;
+        const option = Array.from(modelOptions).find(opt => opt.getAttribute('data-model') === modelId);
+        if (option) {
+            setActiveModelOption(option, { persist });
+        }
+    }
+
     modelOptions.forEach(option => {
         option.addEventListener('click', () => {
-            // Remove active class from all
-            modelOptions.forEach(opt => opt.classList.remove('active'));
-            // Add active class to clicked
-            option.classList.add('active');
-            syncSelectedModelDisplay(option);
-            updateModelDependentToggles();
-
-            // Close dropdown
+            setActiveModelOption(option, { persist: true });
             modelSelector.classList.remove('open');
-
-            // TODO for backend: option.getAttribute('data-model') contains the selected model ID
         });
     });
 
@@ -866,6 +890,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         currentChatId = chat.id;
         currentMessages = [...chat.messages];
+        if (chat.modelId) {
+            setActiveModelById(chat.modelId, { persist: false });
+        }
 
         // Render
         messagesContainer.innerHTML = '';
@@ -898,6 +925,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 title: '...',
                 titlePending: true,
                 messages: currentMessages,
+                modelId: getSelectedModel(),
                 updatedAt: new Date().toISOString()
             };
             chats.unshift(newChat); // add to top
@@ -906,6 +934,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const index = chats.findIndex(c => c.id === currentChatId);
             if (index !== -1) {
                 chats[index].messages = currentMessages;
+                chats[index].modelId = getSelectedModel();
                 chats[index].updatedAt = new Date().toISOString();
 
                 // Move to top
