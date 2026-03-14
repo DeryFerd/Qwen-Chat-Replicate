@@ -1,3 +1,10 @@
+if (window.marked) {
+    marked.setOptions({
+        breaks: true,
+        gfm: true
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const chatInput = document.getElementById('chat-input');
     const sendBtn = document.getElementById('send-btn');
@@ -24,8 +31,194 @@ document.addEventListener('DOMContentLoaded', () => {
         return getModelMetaFromOption(document.querySelector('.model-option.active'));
     }
 
-    function formatMessageContent(content) {
-        return (content || '').replace(/\n/g, '<br>');
+    function escapeHtml(value) {
+        const div = document.createElement('div');
+        div.textContent = value ?? '';
+        return div.innerHTML;
+    }
+
+    function formatPlainText(content) {
+        return escapeHtml(content || '').replace(/\n/g, '<br>');
+    }
+
+    function renderAssistantMarkdown(content) {
+        const raw = window.marked ? marked.parse(content || '') : formatPlainText(content || '');
+        return window.DOMPurify ? DOMPurify.sanitize(raw) : raw;
+    }
+
+    function ensureLinkTargets(container) {
+        container.querySelectorAll('a').forEach(link => {
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+        });
+    }
+
+    function ensureCopyButtons(container) {
+        container.querySelectorAll('pre').forEach(pre => {
+            if (pre.querySelector('.code-copy-btn')) return;
+
+            const code = pre.querySelector('code');
+            if (!code) return;
+
+            pre.classList.add('code-block');
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'code-copy-btn';
+            button.textContent = 'Copy';
+            button.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const text = code.innerText || code.textContent || '';
+
+                try {
+                    if (navigator.clipboard?.writeText) {
+                        await navigator.clipboard.writeText(text);
+                    } else {
+                        const textarea = document.createElement('textarea');
+                        textarea.value = text;
+                        textarea.style.position = 'fixed';
+                        textarea.style.opacity = '0';
+                        document.body.appendChild(textarea);
+                        textarea.focus();
+                        textarea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textarea);
+                    }
+
+                    button.textContent = 'Copied';
+                    setTimeout(() => {
+                        button.textContent = 'Copy';
+                    }, 1200);
+                } catch {
+                    button.textContent = 'Failed';
+                    setTimeout(() => {
+                        button.textContent = 'Copy';
+                    }, 1200);
+                }
+            });
+
+            pre.appendChild(button);
+        });
+    }
+
+    function highlightCodeBlocks(container) {
+        if (!window.hljs) return;
+        if (typeof hljs.highlightAll === 'function') {
+            hljs.highlightAll();
+            return;
+        }
+
+        container.querySelectorAll('pre code').forEach(block => {
+            try {
+                hljs.highlightElement(block);
+            } catch {
+                // Ignore highlight errors.
+            }
+        });
+    }
+
+    function enhanceMarkdown(container) {
+        ensureLinkTargets(container);
+        highlightCodeBlocks(container);
+        ensureCopyButtons(container);
+    }
+
+    function renderMessageBubble(messageBubble, role, content) {
+        if (!messageBubble) return;
+
+        if (role === 'assistant') {
+            messageBubble.innerHTML = renderAssistantMarkdown(content);
+            enhanceMarkdown(messageBubble);
+        } else {
+            messageBubble.innerHTML = formatPlainText(content);
+        }
+    }
+
+    function truncateText(value, maxLength) {
+        const text = value || '';
+        if (text.length <= maxLength) return text;
+        return text.slice(0, maxLength - 1) + '…';
+    }
+
+    function extractDomain(url) {
+        try {
+            return new URL(url).hostname.replace(/^www\./, '');
+        } catch {
+            return url || '';
+        }
+    }
+
+    function parseToolResults(toolMessage) {
+        if (!toolMessage?.content) return [];
+        try {
+            const parsed = JSON.parse(toolMessage.content);
+            if (!Array.isArray(parsed.results)) return [];
+            return parsed.results;
+        } catch {
+            return [];
+        }
+    }
+
+    function collectWebSearchResultsBefore(messages, assistantIndex) {
+        const results = [];
+        if (!Array.isArray(messages)) return results;
+
+        for (let i = assistantIndex - 1; i >= 0; i -= 1) {
+            const message = messages[i];
+            if (message?.role === 'tool' && message?.tool_name === 'web_search') {
+                results.push(...parseToolResults(message));
+                continue;
+            }
+            if (results.length > 0) break;
+        }
+
+        return results;
+    }
+
+    function renderSourcesForAssistant(messageDiv, assistantIndex) {
+        if (!messageDiv) return;
+        const messageContent = messageDiv.querySelector('.message-content');
+        if (!messageContent) return;
+
+        const existing = messageContent.querySelector('.sources-row');
+        if (existing) existing.remove();
+
+        const results = collectWebSearchResultsBefore(currentMessages, assistantIndex);
+        if (!results.length) return;
+
+        const row = document.createElement('div');
+        row.className = 'sources-row';
+
+        results.forEach(result => {
+            const title = truncateText(result?.title || 'Untitled source', 55);
+            const url = result?.url || '';
+            const domain = extractDomain(url);
+
+            const card = document.createElement('a');
+            card.className = 'source-card';
+            card.href = url || '#';
+            card.target = '_blank';
+            card.rel = 'noopener noreferrer';
+
+            const favicon = document.createElement('img');
+            favicon.className = 'source-favicon';
+            favicon.alt = '';
+            favicon.src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=16`;
+
+            const titleEl = document.createElement('div');
+            titleEl.className = 'source-title';
+            titleEl.textContent = title;
+
+            const domainEl = document.createElement('div');
+            domainEl.className = 'source-domain';
+            domainEl.textContent = domain;
+
+            card.appendChild(favicon);
+            card.appendChild(titleEl);
+            card.appendChild(domainEl);
+            row.appendChild(card);
+        });
+
+        messageContent.appendChild(row);
     }
 
     // Sidebar Toggle
@@ -98,6 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentChatId = null;
     let currentMessages = [];
     let botResponseTimeout = null;
+    let activeAbortController = null;
     const thinkingAnimationState = new WeakMap();
 
     // Elements
@@ -237,11 +431,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (list.length === 0) return '';
             let html = `<div class="history-section"><h3 class="section-title">${title}</h3><ul class="history-list">`;
             list.forEach(chat => {
+                const titleClass = chat.titlePending ? 'history-link-text title-pending' : 'history-link-text';
                 html += `
                     <li>
                         <a href="#" class="history-item" data-id="${chat.id}">
                             <i class="ph ph-chat-teardrop-text"></i>
-                            <span class="history-link-text">${chat.title}</span>
+                            <span class="${titleClass}">${chat.title}</span>
                             <button class="chat-options-btn" data-id="${chat.id}" title="Options">
                                 <i class="ph ph-dots-three"></i>
                             </button>
@@ -365,7 +560,10 @@ document.addEventListener('DOMContentLoaded', () => {
         welcomeScreen.style.display = 'none';
         messagesContainer.style.display = 'flex';
 
-        currentMessages.forEach(msg => appendMessageDOM(msg.role, msg.content, msg));
+        currentMessages.forEach((msg, index) => {
+            if (msg.role === 'tool') return;
+            appendMessageDOM(msg.role, msg.content, { ...msg, messageIndex: index });
+        });
 
         // Scroll to bottom
         setTimeout(() => {
@@ -385,7 +583,8 @@ document.addEventListener('DOMContentLoaded', () => {
             currentChatId = Date.now().toString();
             const newChat = {
                 id: currentChatId,
-                title: currentMessages[0].content.length > 40 ? currentMessages[0].content.substring(0, 40) + "..." : currentMessages[0].content,
+                title: '...',
+                titlePending: true,
                 messages: currentMessages,
                 updatedAt: new Date().toISOString()
             };
@@ -404,6 +603,61 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         saveChats();
         renderSidebar();
+    }
+
+    function normalizeChatTitle(value) {
+        return (value || '')
+            .replace(/\s+/g, ' ')
+            .replace(/[.!?]+$/g, '')
+            .trim();
+    }
+
+    async function generateTitleIfNeeded() {
+        if (!currentChatId) return;
+        const convoMessages = currentMessages.filter(msg => msg.role === 'user' || msg.role === 'assistant');
+        if (convoMessages.length !== 2) return;
+
+        const index = chats.findIndex(c => c.id === currentChatId);
+        if (index === -1) return;
+        if (!chats[index].titlePending) return;
+
+        const systemPrompt = 'Generate a short title (max 6 words) for this conversation. Reply with only the title, no quotes, no punctuation at the end.';
+
+        try {
+            const response = await fetch(CHAT_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: getSelectedModel(),
+                    stream: false,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        convoMessages[0],
+                        convoMessages[1]
+                    ]
+                })
+            });
+
+            if (!response.ok) {
+                return;
+            }
+
+            const payload = await response.json();
+            const rawTitle = payload?.message?.content || payload?.response || '';
+            const title = normalizeChatTitle(rawTitle);
+
+            if (!title) return;
+
+            chats[index].title = title;
+            chats[index].titlePending = false;
+            chats[index].updatedAt = new Date().toISOString();
+            saveChats();
+            renderSidebar();
+        } catch {
+            // Leave the placeholder title if generation fails.
+        }
     }
 
     // Initialize sidebar
@@ -442,16 +696,38 @@ document.addEventListener('DOMContentLoaded', () => {
         this.style.height = (this.scrollHeight) + 'px';
 
         // Enable/disable send button
+        if (activeAbortController) {
+            return;
+        }
+
         if (this.value.trim().length > 0) {
             sendBtn.removeAttribute('disabled');
         } else {
             sendBtn.setAttribute('disabled', 'true');
         }
     });
+
+    function setSendButtonMode(mode) {
+        if (mode === 'stop') {
+            sendBtn.classList.add('is-stop');
+            sendBtn.innerHTML = '<i class="ph ph-stop-circle"></i>';
+            sendBtn.removeAttribute('disabled');
+        } else {
+            sendBtn.classList.remove('is-stop');
+            sendBtn.innerHTML = '<i class="ph ph-paper-plane-right"></i>';
+            if (chatInput.value.trim().length > 0) {
+                sendBtn.removeAttribute('disabled');
+            } else {
+                sendBtn.setAttribute('disabled', 'true');
+            }
+        }
+    }
+
     // Handle sending message
     async function sendMessage() {
         const text = chatInput.value.trim();
         if (!text) return;
+        if (activeAbortController) return;
 
         if (welcomeScreen.style.display !== 'none') {
             welcomeScreen.style.display = 'none';
@@ -474,6 +750,39 @@ document.addEventListener('DOMContentLoaded', () => {
             modelMeta: selectedModelMeta,
             pendingThinking: true
         });
+        const controller = new AbortController();
+        activeAbortController = controller;
+        setSendButtonMode('stop');
+        let didFinalize = false;
+        const pendingToolMessages = [];
+
+        const finalizeAssistantMessage = ({ aborted } = {}) => {
+            if (didFinalize) return;
+            didFinalize = true;
+
+            updateAssistantMessageState(assistantMessage, {
+                content: fullReply,
+                thinking: fullThinking,
+                pendingThinking: false
+            });
+
+            if (pendingToolMessages.length) {
+                currentMessages.push(...pendingToolMessages);
+            }
+
+            currentMessages.push({
+                role: 'assistant',
+                content: fullReply,
+                thinking: fullThinking,
+                modelMeta: selectedModelMeta
+            });
+            saveCurrentChat();
+            renderSourcesForAssistant(assistantMessage, currentMessages.length - 1);
+
+            if (!aborted) {
+                generateTitleIfNeeded();
+            }
+        };
 
         try {
             const response = await fetch(CHAT_API_URL, {
@@ -485,7 +794,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     model: getSelectedModel(),
                     messages: currentMessages.map(({ role, content }) => ({ role, content })),
                     stream: true
-                })
+                }),
+                signal: controller.signal
             });
 
             if (!response.ok) {
@@ -507,19 +817,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 fullReply = payload?.message?.content || payload?.response || '';
                 fullThinking = payload?.message?.thinking || payload?.thinking || '';
 
-                updateAssistantMessageState(assistantMessage, {
-                    content: fullReply,
-                    thinking: fullThinking,
-                    pendingThinking: false
-                });
-
-                currentMessages.push({
-                    role: 'assistant',
-                    content: fullReply,
-                    thinking: fullThinking,
-                    modelMeta: selectedModelMeta
-                });
-                saveCurrentChat();
+                finalizeAssistantMessage();
                 return;
             }
 
@@ -546,9 +844,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         const parsed = JSON.parse(line);
                         const thinkingToken = parsed?.message?.thinking || '';
                         const contentToken = parsed?.message?.content || '';
+                        const toolName = parsed?.message?.tool_name || parsed?.message?.name;
+                        const role = parsed?.message?.role;
+                        const isToolMessage = role === 'tool' || Boolean(toolName);
 
-                        if (thinkingToken) fullThinking += thinkingToken;
-                        if (contentToken) fullReply += contentToken;
+                        if (thinkingToken && !isToolMessage) fullThinking += thinkingToken;
+                        if (contentToken && !isToolMessage) fullReply += contentToken;
+                        if (toolName) {
+                            pendingToolMessages.push({
+                                role: 'tool',
+                                tool_name: toolName,
+                                content: parsed?.message?.content || ''
+                            });
+                        }
 
                         updateAssistantMessageState(assistantMessage, {
                             content: fullReply,
@@ -575,21 +883,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            updateAssistantMessageState(assistantMessage, {
-                content: fullReply,
-                thinking: fullThinking,
-                pendingThinking: false
-            });
-
-            currentMessages.push({
-                role: 'assistant',
-                content: fullReply,
-                thinking: fullThinking,
-                modelMeta: selectedModelMeta
-            });
-            saveCurrentChat();
+            finalizeAssistantMessage();
 
         } catch (err) {
+            if (err?.name === 'AbortError') {
+                finalizeAssistantMessage({ aborted: true });
+                return;
+            }
+
             assistantMessage.remove();
             let errorMsg = err.message || 'Terjadi error saat menghubungi server proxy.';
             if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
@@ -598,16 +899,25 @@ document.addEventListener('DOMContentLoaded', () => {
             appendMessageDOM('assistant', `Error: ${errorMsg}`, { modelMeta: selectedModelMeta });
             console.error('API Error:', err);
         } finally {
-            sendBtn.removeAttribute('disabled');
+            activeAbortController = null;
+            setSendButtonMode('send');
         }
     }
 
-    sendBtn.addEventListener('click', sendMessage);
+    sendBtn.addEventListener('click', () => {
+        if (activeAbortController) {
+            activeAbortController.abort();
+            return;
+        }
+        sendMessage();
+    });
 
     chatInput.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            sendMessage();
+            if (!activeAbortController) {
+                sendMessage();
+            }
         }
     });
 
@@ -686,7 +996,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!thinkingBody) return;
 
         thinkingBody.innerHTML = text
-            ? formatMessageContent(text)
+            ? formatPlainText(text)
             : '<span class="thinking-placeholder">Menyusun proses berpikir model...</span>';
     }
 
@@ -786,7 +1096,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const previousTarget = thinkingState.targetText || '';
 
         if (messageBubble) {
-            messageBubble.innerHTML = formatMessageContent(state.content || '');
+            renderMessageBubble(messageBubble, 'assistant', state.content || '');
         }
 
         if (!thinkingBox) {
@@ -884,15 +1194,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 thinking: messageData.thinking || '',
                 pendingThinking: Boolean(messageData.pendingThinking)
             });
-        } else {
-            const formattedContent = formatMessageContent(content);
 
+            if (typeof messageData.messageIndex === 'number') {
+                renderSourcesForAssistant(messageDiv, messageData.messageIndex);
+            }
+        } else {
             messageDiv.innerHTML = `
                 ${avatarHtml}
                 <div class="message-content">
-                    <div class="message-bubble">${formattedContent}</div>
+                    <div class="message-bubble"></div>
                 </div>
             `;
+
+            renderMessageBubble(messageDiv.querySelector('.message-bubble'), 'user', content);
 
             chatArea.scrollTo({
                 top: chatArea.scrollHeight,
