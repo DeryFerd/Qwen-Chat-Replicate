@@ -217,7 +217,7 @@ ul {
     flex: 1;
     overflow-y: auto;
     /* Reverted to auto to keep scroll functionality */
-    padding: 16px 12px;
+    padding: 16px 12px 96px;
     display: flex;
     flex-direction: column;
     gap: 24px;
