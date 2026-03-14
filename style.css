@@ -1622,11 +1622,21 @@ ul {
     overflow-x: auto;
     padding: 6px 2px 12px;
     margin-bottom: 8px;
-    scrollbar-width: none;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) transparent;
 }
 
 .persona-bar::-webkit-scrollbar {
-    display: none;
+    height: 8px;
+}
+
+.persona-bar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.persona-bar::-webkit-scrollbar-thumb {
+    background-color: var(--border-color);
+    border-radius: 999px;
 }
 
 .persona-chip {

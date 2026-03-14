@@ -1923,11 +1923,6 @@ document.addEventListener('DOMContentLoaded', () => {
             setActivePersona(chip.dataset.id);
         });
 
-        personaBar.addEventListener('wheel', (event) => {
-            if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-            personaBar.scrollLeft += event.deltaY;
-            event.preventDefault();
-        }, { passive: false });
     }
 
     if (memoryBtn) {
