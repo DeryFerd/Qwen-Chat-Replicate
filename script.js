@@ -270,7 +270,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const code = codeBlocks[i];
                 const pre = code.closest('pre');
                 if (!pre) continue;
-                const diagramText = code.textContent || '';
+                let diagramText = code.textContent || '';
+                if (/^\s*(graph|flowchart)\b/i.test(diagramText) && !/(graph|flowchart)\s+(LR|RL|TB|BT)\b/i.test(diagramText)) {
+                    diagramText = diagramText.replace(/^\s*(graph|flowchart)\b/i, '$1 LR');
+                }
                 const wrapper = document.createElement('div');
                 wrapper.className = 'mermaid-wrapper';
                 const diagram = document.createElement('div');
