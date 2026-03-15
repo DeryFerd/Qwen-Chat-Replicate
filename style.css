@@ -2344,6 +2344,11 @@ body.artifact-open .main-content {
     border: none;
 }
 
+.artifact-iframe[hidden],
+.artifact-code-view[hidden] {
+    display: none !important;
+}
+
 .artifact-code-view {
     display: block;
     width: 100%;
