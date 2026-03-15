@@ -91,6 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let artifactState = { code: '', lang: '', previewSupported: true, isViz: false };
 
     const CHAT_API_URL = '/api/chat';
+    const RENDERABLE_ARTIFACT_LANGS = ['html', 'javascript', 'jsx', 'svg', 'chartjs', 'chart'];
     const VIZ_SIGNALS = [
         'new Chart(',
         'Chart.register',
@@ -1063,6 +1064,115 @@ document.addEventListener('DOMContentLoaded', () => {
         return VIZ_SIGNALS.some(signal => source.includes(signal));
     }
 
+    function isRenderableArtifactLang(lang) {
+        return RENDERABLE_ARTIFACT_LANGS.includes(lang);
+    }
+
+    function cleanArtifactSummaryText(text) {
+        return (text || '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/[`*_#]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function truncateArtifactSummary(text, maxLength = 56) {
+        if (!text || text.length <= maxLength) return text;
+        return `${text.slice(0, maxLength - 1).trim()}…`;
+    }
+
+    function getArtifactSummaryTitle(code, lang) {
+        const source = typeof code === 'string' ? code : '';
+        const htmlTitleMatch = source.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        if (htmlTitleMatch) {
+            const title = truncateArtifactSummary(cleanArtifactSummaryText(htmlTitleMatch[1]));
+            if (title) return title;
+        }
+
+        const chartTitleMatch = source.match(/text\s*:\s*['"`]([^'"`]+)['"`]/i);
+        if ((lang === 'chartjs' || lang === 'chart') && chartTitleMatch) {
+            const title = truncateArtifactSummary(cleanArtifactSummaryText(chartTitleMatch[1]));
+            if (title) return title;
+        }
+
+        const commentPatterns = [
+            /^\s*\/\/\s*(.+)$/m,
+            /^\s*\/\*\s*([\s\S]*?)\*\//,
+            /^\s*<!--\s*([\s\S]*?)-->/,
+            /^\s*#\s+(.+)$/m
+        ];
+        for (const pattern of commentPatterns) {
+            const match = source.match(pattern);
+            if (!match) continue;
+            const candidate = truncateArtifactSummary(cleanArtifactSummaryText((match[1] || '').split(/\r?\n/)[0]));
+            if (candidate) return candidate;
+        }
+
+        const firstMeaningfulLine = source
+            .split(/\r?\n/)
+            .map(line => line.trim())
+            .find(line => line
+                && !line.startsWith('```')
+                && !/^<!doctype/i.test(line)
+                && !/^<\/?(html|head|body|script|style)/i.test(line));
+
+        if (firstMeaningfulLine) {
+            const looksLikeRawCode = /^(const|let|var|function|import|export|return|if|for|while|class|document\.|window\.|new\s+Chart\(|<div|<svg|<canvas|ctx\b)/i.test(firstMeaningfulLine);
+            if (!looksLikeRawCode) {
+                const candidate = truncateArtifactSummary(cleanArtifactSummaryText(firstMeaningfulLine));
+                if (candidate) return candidate;
+            }
+        }
+
+        const fallbackTitles = {
+            html: 'HTML Artifact',
+            javascript: 'JavaScript Artifact',
+            jsx: 'JSX Artifact',
+            svg: 'SVG Artifact',
+            chartjs: 'Chart Artifact',
+            chart: 'Chart Artifact'
+        };
+        return fallbackTitles[lang] || 'Artifact';
+    }
+
+    function collapseArtifactBlocks(container) {
+        if (!container) return;
+        const blocks = Array.from(container.querySelectorAll('pre > code'));
+
+        blocks.forEach(code => {
+            if (code.classList.contains('language-mermaid')) return;
+
+            const lang = normalizeArtifactLang(getCodeLanguage(code));
+            if (!isRenderableArtifactLang(lang)) return;
+
+            const codeText = code.textContent || '';
+            const resolvedLang = lang === 'javascript' && isVizArtifactCode(codeText) ? 'chartjs' : lang;
+            const pre = code.closest('pre');
+            if (!pre || pre.dataset.artifactCollapsed === 'true') return;
+
+            const wrapper = pre.closest('.code-block-wrapper') || pre;
+            const summaryButton = document.createElement('button');
+            summaryButton.type = 'button';
+            summaryButton.className = 'artifact-summary-card';
+            summaryButton.innerHTML = `
+                <span class="artifact-summary-copy">
+                    <span class="artifact-summary-title">${escapeHtml(getArtifactSummaryTitle(codeText, resolvedLang))}</span>
+                    <span class="artifact-summary-meta">Code</span>
+                </span>
+                <span class="artifact-summary-visual" aria-hidden="true">
+                    <i class="ph ph-file-code"></i>
+                </span>
+            `;
+            summaryButton.addEventListener('click', () => {
+                openArtifactFromCode(codeText, resolvedLang);
+            });
+
+            wrapper.hidden = true;
+            pre.dataset.artifactCollapsed = 'true';
+            wrapper.insertAdjacentElement('afterend', summaryButton);
+        });
+    }
+
     function setArtifactTitle(lang) {
         const titles = {
             html: 'HTML Preview',
@@ -1156,7 +1266,7 @@ ${safeCode}
             const lang = normalizeArtifactLang(getCodeLanguage(code));
             const codeText = code.textContent || '';
             const isVizCode = lang === 'javascript' && isVizArtifactCode(codeText);
-            if (!['html', 'javascript', 'jsx', 'svg', 'chartjs', 'chart'].includes(lang)) return;
+            if (!isRenderableArtifactLang(lang)) return;
             const pre = code.closest('pre');
             if (!pre || pre.dataset.artifactButton === 'true') return;
 
@@ -3359,6 +3469,7 @@ ${safeCode}
 
             attachArtifactButtons(assistantMessage);
             autoOpenVizArtifact(assistantMessage);
+            collapseArtifactBlocks(assistantMessage);
 
             if (!aborted) {
                 generateTitleIfNeeded();
@@ -3944,6 +4055,7 @@ ${safeCode}
 
             if (!messageData.pendingThinking) {
                 attachArtifactButtons(messageDiv);
+                collapseArtifactBlocks(messageDiv);
             }
         } else {
             messageDiv.innerHTML = `
