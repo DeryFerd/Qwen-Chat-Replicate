@@ -69,6 +69,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeTagFilter = null;
     let tagEditorChatId = null;
     let userMemories = [];
+    let memoryCandidates = {};
+    let memoryTurnCounter = 0;
     let currentUserProfile = { id: 'default', name: 'User' };
     const thinkingAnimationState = new WeakMap();
 
@@ -408,6 +410,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return `qwen_user_memory_${userId || 'default'}`;
     }
 
+    function getMemoryCandidatesKey(userId) {
+        return `qwen_memory_candidates_${userId || 'default'}`;
+    }
+
     function normalizeMemoryEntry(entry) {
         const text = String(entry?.text || '').trim().slice(0, 120);
         if (!text) return null;
@@ -434,6 +440,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch {
             userMemories = [];
         }
+
+        loadMemoryCandidates();
     }
 
     function saveMemories() {
@@ -443,11 +451,83 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('qwen_user_memory', payload);
     }
 
+    function loadMemoryCandidates() {
+        const userId = currentUserProfile?.id || 'default';
+        const key = getMemoryCandidatesKey(userId);
+        try {
+            const raw = JSON.parse(localStorage.getItem(key) || '{}');
+            memoryCandidates = raw && typeof raw === 'object' ? raw : {};
+        } catch {
+            memoryCandidates = {};
+        }
+    }
+
+    function saveMemoryCandidates() {
+        const userId = currentUserProfile?.id || 'default';
+        localStorage.setItem(getMemoryCandidatesKey(userId), JSON.stringify(memoryCandidates));
+    }
+
     function isMemoryDuplicate(text) {
         const lowered = text.toLowerCase();
         return userMemories.some(entry => {
             const existing = entry.text.toLowerCase();
             return existing.includes(lowered) || lowered.includes(existing);
+        });
+    }
+
+    function normalizeMemoryKey(text) {
+        return String(text || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function normalizeMemoryCandidateText(text) {
+        let cleaned = String(text || '').trim();
+        cleaned = cleaned.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').trim();
+        cleaned = cleaned.replace(/^(aku|saya|gue|gw)\b/i, 'User');
+        return cleaned.slice(0, 120);
+    }
+
+    function recordMemoryCandidate(text) {
+        const normalizedText = normalizeMemoryCandidateText(text);
+        if (!normalizedText) return false;
+        if (isMemoryDuplicate(normalizedText)) return false;
+
+        const key = normalizeMemoryKey(normalizedText);
+        if (!key) return false;
+
+        const existing = memoryCandidates[key] || { text: normalizedText, count: 0, lastSeenTurn: -1, updatedAt: '' };
+        if (existing.lastSeenTurn !== memoryTurnCounter) {
+            existing.count += 1;
+            existing.lastSeenTurn = memoryTurnCounter;
+        }
+        existing.text = normalizedText;
+        existing.updatedAt = new Date().toISOString();
+        memoryCandidates[key] = existing;
+
+        if (existing.count >= 2) {
+            delete memoryCandidates[key];
+            saveMemoryCandidates();
+            return addMemoryText(normalizedText);
+        }
+
+        pruneMemoryCandidates();
+        saveMemoryCandidates();
+        return false;
+    }
+
+    function pruneMemoryCandidates() {
+        const entries = Object.entries(memoryCandidates);
+        if (entries.length <= 50) return;
+        entries.sort((a, b) => {
+            const aTime = Date.parse(a[1].updatedAt || 0) || 0;
+            const bTime = Date.parse(b[1].updatedAt || 0) || 0;
+            return aTime - bTime;
+        });
+        entries.slice(0, entries.length - 50).forEach(([key]) => {
+            delete memoryCandidates[key];
         });
     }
 
@@ -509,6 +589,33 @@ document.addEventListener('DOMContentLoaded', () => {
         return '';
     }
 
+    function extractHeuristicMemories(text) {
+        if (!text) return [];
+        const candidates = [];
+        const patterns = [
+            /\b(?:aku|saya)\s+(?:suka|senang|hobi|minat)\s+([^.!?]+)/i,
+            /\b(?:aku|saya)\s+(?:tinggal|berdomisili|asal)\s+(?:di\s+)?([^.!?]+)/i,
+            /\b(?:aku|saya)\s+(?:bekerja|kerja)\s+(?:sebagai|di)\s+([^.!?]+)/i,
+            /\b(?:aku|saya)\s+(?:seorang|adalah)\s+([^.!?]+)/i,
+            /\b(?:prefer|lebih\s+suka)\s+([^.!?]+)/i,
+            /\b(?:tujuan|goal|target)\s*(?:aku|saya)?\s*(?:adalah|:)?\s*([^.!?]+)/i
+        ];
+
+        patterns.forEach(pattern => {
+            const match = text.match(pattern);
+            if (match && match[1]) {
+                const raw = match[0].trim();
+                let candidate = raw.replace(/^(aku|saya)\s+/i, 'User ');
+                if (candidate === raw) {
+                    candidate = `User ${raw}`;
+                }
+                candidates.push(candidate);
+            }
+        });
+
+        return candidates;
+    }
+
     function flashMemorySaved() {
         if (!memoryCounter) return;
         memoryCounter.classList.add('memory-saved');
@@ -548,6 +655,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const lastUser = [...currentMessages].reverse().find(msg => msg.role === 'user');
         const lastAssistant = [...currentMessages].reverse().find(msg => msg.role === 'assistant');
         if (!lastUser || !lastAssistant) return;
+
+        memoryTurnCounter += 1;
+        const candidateMap = new Map();
+        const userText = extractMessageText(lastUser);
+        extractHeuristicMemories(userText).forEach(candidate => {
+            const key = normalizeMemoryKey(candidate);
+            if (key) candidateMap.set(key, candidate);
+        });
 
         const systemPrompt = 'You are a memory extraction assistant. Given the conversation, extract 0-3 SHORT factual statements about the USER ONLY (not the AI) that are worth remembering long-term (name, profession, preferences, goals, location, etc). Return ONLY a JSON array of strings, no explanation, no markdown. Example: ["User is a software engineer", "User prefers dark mode"]. If nothing is worth remembering, return [].';
 
@@ -600,12 +715,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            if (!Array.isArray(extracted)) return;
+            if (!Array.isArray(extracted)) extracted = [];
+            extracted.forEach(item => {
+                if (typeof item !== 'string') return;
+                const candidate = normalizeMemoryCandidateText(item);
+                const key = normalizeMemoryKey(candidate);
+                if (key) candidateMap.set(key, candidate);
+            });
+
             let changed = false;
-            for (const item of extracted) {
+            for (const candidate of candidateMap.values()) {
                 if (userMemories.length >= 20) break;
-                if (typeof item !== 'string') continue;
-                const added = addMemoryText(item);
+                const added = recordMemoryCandidate(candidate);
                 if (added) changed = true;
             }
 
@@ -2081,7 +2202,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const explicitMemory = extractExplicitMemory(text);
         if (explicitMemory) {
-            const added = addMemoryText(explicitMemory);
+            const normalized = normalizeMemoryCandidateText(explicitMemory);
+            const added = addMemoryText(normalized);
             if (added) {
                 if (memoryModal?.classList.contains('show')) {
                     renderMemoryList();
