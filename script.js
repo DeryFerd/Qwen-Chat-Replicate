@@ -3,12 +3,16 @@ if (window.mermaid) {
         startOnLoad: false,
         theme: 'dark',
         securityLevel: 'loose',
+        darkMode: true,
         flowchart: {
             htmlLabels: true
         },
         themeVariables: {
             primaryColor: '#6366f1',
             primaryTextColor: '#ECEFF4',
+            secondaryTextColor: '#ECEFF4',
+            tertiaryTextColor: '#ECEFF4',
+            textColor: '#ECEFF4',
             primaryBorderColor: '#6366f1',
             lineColor: '#94A3B8',
             secondaryColor: '#1C1E26',
@@ -17,8 +21,10 @@ if (window.mermaid) {
             mainBkg: '#1C1E26',
             nodeBorder: '#6366f1',
             clusterBkg: '#13141B',
+            clusterTextColor: '#ECEFF4',
             titleColor: '#ECEFF4',
             edgeLabelBackground: '#1C1E26',
+            edgeLabelColor: '#ECEFF4',
             fontFamily: 'ui-monospace, monospace'
         }
     });
@@ -267,6 +273,81 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch {
             // Ignore KaTeX errors.
         }
+    }
+
+    function parseCssColorToRgb(color) {
+        if (!color) return null;
+        const normalized = String(color).trim().toLowerCase();
+        if (!normalized || normalized === 'none' || normalized === 'transparent' || normalized.startsWith('url(')) {
+            return null;
+        }
+
+        const hexMatch = normalized.match(/^#([0-9a-f]{3,8})$/i);
+        if (hexMatch) {
+            const hex = hexMatch[1];
+            if (hex.length === 3 || hex.length === 4) {
+                const [r, g, b] = hex.slice(0, 3).split('').map(part => parseInt(part + part, 16));
+                return { r, g, b };
+            }
+            if (hex.length === 6 || hex.length === 8) {
+                return {
+                    r: parseInt(hex.slice(0, 2), 16),
+                    g: parseInt(hex.slice(2, 4), 16),
+                    b: parseInt(hex.slice(4, 6), 16)
+                };
+            }
+        }
+
+        const rgbMatch = normalized.match(/^rgba?\(([^)]+)\)$/);
+        if (rgbMatch) {
+            const [r, g, b] = rgbMatch[1]
+                .split(',')
+                .slice(0, 3)
+                .map(part => Number.parseFloat(part.trim()));
+            if ([r, g, b].every(Number.isFinite)) {
+                return { r, g, b };
+            }
+        }
+
+        return null;
+    }
+
+    function getReadableMermaidTextColor(rgb) {
+        const toLinear = (channel) => {
+            const value = channel / 255;
+            return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+        };
+
+        const luminance = (0.2126 * toLinear(rgb.r)) + (0.7152 * toLinear(rgb.g)) + (0.0722 * toLinear(rgb.b));
+        return luminance > 0.45 ? '#111827' : '#F8FAFC';
+    }
+
+    function applyMermaidTextContrast(svgEl) {
+        if (!svgEl) return;
+
+        const groups = svgEl.querySelectorAll('.node, .cluster');
+        groups.forEach(group => {
+            const shape = Array.from(group.querySelectorAll('rect, polygon, circle, ellipse, path'))
+                .find(element => {
+                    const fill = window.getComputedStyle(element).fill || element.getAttribute('fill');
+                    return Boolean(parseCssColorToRgb(fill));
+                });
+            if (!shape) return;
+
+            const fill = window.getComputedStyle(shape).fill || shape.getAttribute('fill');
+            const rgb = parseCssColorToRgb(fill);
+            if (!rgb) return;
+
+            const textColor = getReadableMermaidTextColor(rgb);
+            group.querySelectorAll('text, tspan').forEach(textNode => {
+                textNode.setAttribute('fill', textColor);
+                textNode.style.fill = textColor;
+            });
+            group.querySelectorAll('foreignObject, .nodeLabel, .label, div, span, p').forEach(labelNode => {
+                labelNode.style.color = textColor;
+                labelNode.style.fill = textColor;
+            });
+        });
     }
 
     const mermaidRenderState = new WeakMap();
@@ -754,6 +835,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         baseHeight = parseFloat(svgEl.getAttribute('height') || '') || viewBox?.height || bbox?.height || 0;
                         svgEl.style.maxWidth = 'none';
                         svgEl.style.display = 'block';
+                        applyMermaidTextContrast(svgEl);
                     }
                     if (!result?.svg || !result.svg.trim()) {
                         throw new Error('Empty SVG output');
