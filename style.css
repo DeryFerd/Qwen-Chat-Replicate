@@ -1212,19 +1212,17 @@ ul {
 }
 
 .mermaid-viewport {
+    width: 100%;
     height: 360px;
     max-height: 60vh;
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     background: var(--bg-main);
-    overflow: auto;
+    overflow: hidden;
     cursor: grab;
     user-select: none;
-    scrollbar-width: none;
-}
-
-.mermaid-viewport::-webkit-scrollbar {
-    display: none;
+    touch-action: none;
+    position: relative;
 }
 
 .mermaid-wrapper.show-code .mermaid-viewport {
@@ -1240,22 +1238,23 @@ ul {
 }
 
 .mermaid-stage {
-    min-width: 100%;
-    min-height: 100%;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding: 24px;
-    box-sizing: border-box;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
 }
 
 .mermaid-panzoom {
-    display: block;
-    flex: 0 0 auto;
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: top left;
+    will-change: transform;
 }
 
 .mermaid-panzoom svg {
     display: block;
+    max-width: none;
 }
 
 .mermaid-code-wrap {

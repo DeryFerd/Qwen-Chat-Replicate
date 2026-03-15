@@ -614,10 +614,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 let isDragging = false;
                 let startX = 0;
                 let startY = 0;
-                let startScrollLeft = 0;
-                let startScrollTop = 0;
                 let baseWidth = 0;
                 let baseHeight = 0;
+                let offsetX = 0;
+                let offsetY = 0;
 
                 const clampScale = (value) => Math.min(4, Math.max(0.4, value));
 
@@ -633,40 +633,52 @@ document.addEventListener('DOMContentLoaded', () => {
                 codeTab.addEventListener('click', () => setMode('code'));
                 previewTab.addEventListener('click', () => setMode('preview'));
 
-                const centerViewport = () => {
-                    requestAnimationFrame(() => {
-                        diagramViewport.scrollLeft = Math.max(0, (diagramViewport.scrollWidth - diagramViewport.clientWidth) / 2);
-                        diagramViewport.scrollTop = 0;
-                    });
+                const applyViewportTransform = () => {
+                    panzoom.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
                 };
 
-                const applyZoom = () => {
+                const resetViewport = () => {
+                    const viewportWidth = diagramViewport.clientWidth || baseWidth;
+                    offsetX = Math.max((viewportWidth - baseWidth) / 2, 0);
+                    offsetY = 24;
+                    scale = 1;
+                    applyViewportTransform();
+                };
+
+                const applyBaseSize = () => {
                     const svg = panzoom.querySelector('svg');
                     if (!svg || !baseWidth || !baseHeight) return;
-                    const width = baseWidth * scale;
-                    const height = baseHeight * scale;
-                    panzoom.style.width = `${width}px`;
-                    panzoom.style.height = `${height}px`;
-                    svg.style.width = `${width}px`;
-                    svg.style.height = `${height}px`;
+                    panzoom.style.width = `${baseWidth}px`;
+                    panzoom.style.height = `${baseHeight}px`;
+                    svg.style.width = `${baseWidth}px`;
+                    svg.style.height = `${baseHeight}px`;
+                };
+
+                const zoomAtCenter = (nextScale) => {
+                    const clamped = clampScale(nextScale);
+                    if (clamped === scale) return;
+                    const viewportWidth = diagramViewport.clientWidth || baseWidth;
+                    const viewportHeight = diagramViewport.clientHeight || baseHeight;
+                    const originX = viewportWidth / 2;
+                    const originY = viewportHeight / 2;
+                    const contentX = (originX - offsetX) / scale;
+                    const contentY = (originY - offsetY) / scale;
+                    scale = clamped;
+                    offsetX = originX - (contentX * scale);
+                    offsetY = originY - (contentY * scale);
+                    applyViewportTransform();
                 };
 
                 zoomInBtn.addEventListener('click', () => {
-                    scale = clampScale(scale + 0.2);
-                    applyZoom();
-                    centerViewport();
+                    zoomAtCenter(scale + 0.2);
                 });
 
                 zoomOutBtn.addEventListener('click', () => {
-                    scale = clampScale(scale - 0.2);
-                    applyZoom();
-                    centerViewport();
+                    zoomAtCenter(scale - 0.2);
                 });
 
                 resetBtn.addEventListener('click', () => {
-                    scale = 1;
-                    applyZoom();
-                    centerViewport();
+                    resetViewport();
                 });
 
                 diagramViewport.addEventListener('pointerdown', (event) => {
@@ -675,15 +687,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     diagramViewport.classList.add('is-grabbing');
                     startX = event.clientX;
                     startY = event.clientY;
-                    startScrollLeft = diagramViewport.scrollLeft;
-                    startScrollTop = diagramViewport.scrollTop;
                     diagramViewport.setPointerCapture(event.pointerId);
                 });
 
                 diagramViewport.addEventListener('pointermove', (event) => {
                     if (!isDragging) return;
-                    diagramViewport.scrollLeft = startScrollLeft - (event.clientX - startX);
-                    diagramViewport.scrollTop = startScrollTop - (event.clientY - startY);
+                    offsetX += event.clientX - startX;
+                    offsetY += event.clientY - startY;
+                    startX = event.clientX;
+                    startY = event.clientY;
+                    applyViewportTransform();
                 });
 
                 diagramViewport.addEventListener('pointerup', (event) => {
@@ -751,61 +764,52 @@ document.addEventListener('DOMContentLoaded', () => {
                     codeWrap.hidden = true;
                     container.classList.add('has-mermaid');
                     container.closest('.message-content')?.classList.add('has-mermaid');
-                    applyZoom();
-                    centerViewport();
+                    applyBaseSize();
+                    resetViewport();
 
-                    downloadBtn.addEventListener('click', () => {
+                    downloadBtn.addEventListener('click', async () => {
                         const svg = panzoom.querySelector('svg');
                         if (!svg) return;
-                        const serializer = new XMLSerializer();
-                        let source = serializer.serializeToString(svg);
-                        if (!source.match(/^<svg[^>]+xmlns=/)) {
-                            source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
-                        }
-                        const svgBlob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
-                        const url = URL.createObjectURL(svgBlob);
-                        const img = new Image();
-                        img.onload = () => {
-                            const viewBox = svg.viewBox?.baseVal;
-                            const widthAttr = parseFloat(svg.getAttribute('width') || '') || 0;
-                            const heightAttr = parseFloat(svg.getAttribute('height') || '') || 0;
-                            const bbox = (() => {
-                                try {
-                                    return svg.getBBox();
-                                } catch {
-                                    return null;
-                                }
-                            })();
-                            const width = viewBox?.width || widthAttr || bbox?.width || img.width || 1200;
-                            const height = viewBox?.height || heightAttr || bbox?.height || img.height || 800;
-                            const ratio = window.devicePixelRatio || 1;
+                        try {
+                            const clone = svg.cloneNode(true);
+                            clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+                            clone.setAttribute('width', String(baseWidth));
+                            clone.setAttribute('height', String(baseHeight));
+                            clone.removeAttribute('style');
+
+                            const serializer = new XMLSerializer();
+                            const source = serializer.serializeToString(clone);
+                            const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`;
+                            const img = new Image();
+
+                            await new Promise((resolve, reject) => {
+                                img.onload = resolve;
+                                img.onerror = reject;
+                                img.src = dataUrl;
+                            });
+
+                            const ratio = Math.max(window.devicePixelRatio || 1, 2);
                             const canvas = document.createElement('canvas');
-                            canvas.width = width * ratio;
-                            canvas.height = height * ratio;
+                            canvas.width = Math.ceil(baseWidth * ratio);
+                            canvas.height = Math.ceil(baseHeight * ratio);
                             const ctx = canvas.getContext('2d');
-                            if (ctx) {
-                                ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-                                ctx.fillStyle = '#ffffff';
-                                ctx.fillRect(0, 0, width, height);
-                                ctx.drawImage(img, 0, 0, width, height);
-                                canvas.toBlob((blob) => {
-                                    if (!blob) return;
-                                    const pngUrl = URL.createObjectURL(blob);
-                                    const link = document.createElement('a');
-                                    link.href = pngUrl;
-                                    link.download = 'diagram.png';
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    document.body.removeChild(link);
-                                    URL.revokeObjectURL(pngUrl);
-                                }, 'image/png');
-                            }
-                            URL.revokeObjectURL(url);
-                        };
-                        img.onerror = () => {
-                            URL.revokeObjectURL(url);
-                        };
-                        img.src = url;
+                            if (!ctx) return;
+
+                            ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+                            ctx.fillStyle = '#ffffff';
+                            ctx.fillRect(0, 0, baseWidth, baseHeight);
+                            ctx.drawImage(img, 0, 0, baseWidth, baseHeight);
+
+                            const pngUrl = canvas.toDataURL('image/png');
+                            const link = document.createElement('a');
+                            link.href = pngUrl;
+                            link.download = 'diagram.png';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        } catch {
+                            // Ignore export failures.
+                        }
                     });
                 } catch (err) {
                     if (pre.parentNode) {
