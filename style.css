@@ -1189,6 +1189,14 @@ ul {
     justify-content: center;
 }
 
+.mermaid-wrapper.show-code .mermaid-viewport {
+    display: none;
+}
+
+.mermaid-wrapper.show-code .mermaid-code-wrap {
+    display: block;
+}
+
 .mermaid-viewport.is-grabbing {
     cursor: grabbing;
 }
@@ -1208,6 +1216,7 @@ ul {
 
 .mermaid-code-wrap {
     position: relative;
+    display: none;
 }
 
 .mermaid-code-view {
