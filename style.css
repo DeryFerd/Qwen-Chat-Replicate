@@ -1039,6 +1039,10 @@ ul {
     line-height: 1.7;
 }
 
+.message.assistant .message-bubble.has-mermaid {
+    width: 100%;
+}
+
 .message.assistant .message-bubble a {
     color: var(--accent);
     text-decoration: underline;
@@ -1103,6 +1107,8 @@ ul {
     padding: 16px;
     margin: 12px 0;
     overflow: hidden;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .mermaid-header {

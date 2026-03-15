@@ -335,6 +335,36 @@ document.addEventListener('DOMContentLoaded', () => {
         return output.join('\n');
     }
 
+    function normalizeSubgraphLines(diagramText) {
+        const lines = diagramText.split(/\r?\n/);
+        const output = lines.map(line => {
+            const match = line.match(/^(\s*subgraph\s+)(.+)$/i);
+            if (!match) return line;
+            const prefix = match[1];
+            let rest = match[2].trim();
+            if (!rest) return line;
+
+            if (rest.includes('[') && !rest.includes(']')) {
+                rest = rest.replace('[', '').trim();
+            }
+            if (rest.includes(']') && !rest.includes('[')) {
+                rest = rest.replace(']', '').trim();
+            }
+
+            if (/^["']/.test(rest)) {
+                return `${prefix}${rest}`;
+            }
+
+            if (rest.includes('[') && rest.includes(']')) {
+                return `${prefix}${rest}`;
+            }
+
+            const safe = rest.replace(/"/g, '\\"');
+            return `${prefix}"${safe}"`;
+        });
+        return output.join('\n');
+    }
+
     function normalizeMermaidSource(raw) {
         let text = String(raw || '');
         text = text.replace(/^\s*```(?:mermaid)?\s*/i, '').replace(/\s*```\s*$/i, '');
@@ -367,6 +397,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (MERMAID_FLOW_DIRECTIVE_REGEX.test(cleaned)) {
             cleaned = normalizeFlowchartEdges(cleaned);
         }
+
+        cleaned = normalizeSubgraphLines(cleaned);
 
         return cleaned;
     }
@@ -524,10 +556,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 wrapper.appendChild(diagramBody);
 
                 try {
+                    pre.replaceWith(wrapper);
                     const result = await mermaid.render(renderId, diagramText);
                     panzoom.innerHTML = result?.svg || '';
-                    pre.replaceWith(wrapper);
                     codeWrap.hidden = true;
+                    container.classList.add('has-mermaid');
 
                     let scale = 1;
                     let translateX = 0;
@@ -579,15 +612,50 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (!source.match(/^<svg[^>]+xmlns=/)) {
                             source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
                         }
-                        const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
-                        const url = URL.createObjectURL(blob);
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = 'diagram.svg';
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        URL.revokeObjectURL(url);
+                        const svgBlob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+                        const url = URL.createObjectURL(svgBlob);
+                        const img = new Image();
+                        img.onload = () => {
+                            const viewBox = svg.viewBox?.baseVal;
+                            const widthAttr = parseFloat(svg.getAttribute('width') || '') || 0;
+                            const heightAttr = parseFloat(svg.getAttribute('height') || '') || 0;
+                            const bbox = (() => {
+                                try {
+                                    return svg.getBBox();
+                                } catch {
+                                    return null;
+                                }
+                            })();
+                            const width = viewBox?.width || widthAttr || bbox?.width || img.width || 1200;
+                            const height = viewBox?.height || heightAttr || bbox?.height || img.height || 800;
+                            const ratio = window.devicePixelRatio || 1;
+                            const canvas = document.createElement('canvas');
+                            canvas.width = width * ratio;
+                            canvas.height = height * ratio;
+                            const ctx = canvas.getContext('2d');
+                            if (ctx) {
+                                ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+                                ctx.fillStyle = '#ffffff';
+                                ctx.fillRect(0, 0, width, height);
+                                ctx.drawImage(img, 0, 0, width, height);
+                                canvas.toBlob((blob) => {
+                                    if (!blob) return;
+                                    const pngUrl = URL.createObjectURL(blob);
+                                    const link = document.createElement('a');
+                                    link.href = pngUrl;
+                                    link.download = 'diagram.png';
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    document.body.removeChild(link);
+                                    URL.revokeObjectURL(pngUrl);
+                                }, 'image/png');
+                            }
+                            URL.revokeObjectURL(url);
+                        };
+                        img.onerror = () => {
+                            URL.revokeObjectURL(url);
+                        };
+                        img.src = url;
                     });
 
                     diagramViewport.addEventListener('pointerdown', (event) => {
@@ -618,11 +686,19 @@ document.addEventListener('DOMContentLoaded', () => {
                         diagramViewport.releasePointerCapture(event.pointerId);
                     });
                 } catch (err) {
+                    if (pre.parentNode) {
+                        pre.replaceWith(wrapper);
+                    }
+                    codeWrap.hidden = false;
+                    diagramViewport.hidden = true;
+                    wrapper.classList.add('show-code');
+                    codeTab.classList.add('is-active');
+                    previewTab.classList.remove('is-active');
                     const errorLabel = document.createElement('div');
                     errorLabel.className = 'mermaid-error';
                     const message = err?.message ? String(err.message).slice(0, 120) : '';
                     errorLabel.textContent = message ? `Diagram render failed: ${message}` : 'Diagram render failed';
-                    pre.insertAdjacentElement('beforebegin', errorLabel);
+                    header.insertAdjacentElement('afterend', errorLabel);
                 }
             }
 
