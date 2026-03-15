@@ -404,23 +404,91 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!diagramText) continue;
                 const wrapper = document.createElement('div');
                 wrapper.className = 'mermaid-wrapper';
-                const diagram = document.createElement('div');
-                diagram.className = 'mermaid-diagram';
-                const renderId = `mermaid-${Date.now()}-${i}-${Math.random().toString(16).slice(2, 6)}`;
-                diagram.id = renderId;
 
-                const copyBtn = document.createElement('button');
-                copyBtn.type = 'button';
-                copyBtn.className = 'code-copy-btn mermaid-copy-btn';
-                copyBtn.textContent = 'Copy source';
-                copyBtn.addEventListener('click', async (event) => {
+                const header = document.createElement('div');
+                header.className = 'mermaid-header';
+                const title = document.createElement('div');
+                title.className = 'mermaid-title';
+                title.textContent = 'mermaid';
+
+                const headerRight = document.createElement('div');
+                headerRight.className = 'mermaid-header-right';
+
+                const actions = document.createElement('div');
+                actions.className = 'mermaid-actions';
+
+                const zoomOutBtn = document.createElement('button');
+                zoomOutBtn.type = 'button';
+                zoomOutBtn.className = 'mermaid-action-btn';
+                zoomOutBtn.title = 'Zoom out';
+                zoomOutBtn.innerHTML = '<i class="ph ph-magnifying-glass-minus"></i>';
+
+                const zoomInBtn = document.createElement('button');
+                zoomInBtn.type = 'button';
+                zoomInBtn.className = 'mermaid-action-btn';
+                zoomInBtn.title = 'Zoom in';
+                zoomInBtn.innerHTML = '<i class="ph ph-magnifying-glass-plus"></i>';
+
+                const resetBtn = document.createElement('button');
+                resetBtn.type = 'button';
+                resetBtn.className = 'mermaid-action-btn';
+                resetBtn.title = 'Reset view';
+                resetBtn.innerHTML = '<i class="ph ph-arrows-out"></i>';
+
+                const downloadBtn = document.createElement('button');
+                downloadBtn.type = 'button';
+                downloadBtn.className = 'mermaid-action-btn';
+                downloadBtn.title = 'Download SVG';
+                downloadBtn.innerHTML = '<i class="ph ph-download-simple"></i>';
+
+                actions.appendChild(zoomOutBtn);
+                actions.appendChild(zoomInBtn);
+                actions.appendChild(resetBtn);
+                actions.appendChild(downloadBtn);
+
+                const tabs = document.createElement('div');
+                tabs.className = 'mermaid-tabs';
+                const codeTab = document.createElement('button');
+                codeTab.type = 'button';
+                codeTab.className = 'mermaid-tab';
+                codeTab.textContent = 'Code';
+                const previewTab = document.createElement('button');
+                previewTab.type = 'button';
+                previewTab.className = 'mermaid-tab is-active';
+                previewTab.textContent = 'Preview';
+                tabs.appendChild(codeTab);
+                tabs.appendChild(previewTab);
+
+                headerRight.appendChild(actions);
+                headerRight.appendChild(tabs);
+                header.appendChild(title);
+                header.appendChild(headerRight);
+
+                const diagramViewport = document.createElement('div');
+                diagramViewport.className = 'mermaid-viewport';
+                const panzoom = document.createElement('div');
+                panzoom.className = 'mermaid-panzoom';
+                diagramViewport.appendChild(panzoom);
+
+                const codeWrap = document.createElement('div');
+                codeWrap.className = 'mermaid-code-wrap';
+                const codePre = document.createElement('pre');
+                codePre.className = 'mermaid-code-view';
+                codePre.textContent = rawText.trim();
+
+                const codeCopyBtn = document.createElement('button');
+                codeCopyBtn.type = 'button';
+                codeCopyBtn.className = 'code-copy-btn mermaid-code-copy';
+                codeCopyBtn.textContent = 'Copy';
+                codeCopyBtn.addEventListener('click', async (event) => {
                     event.preventDefault();
+                    const textToCopy = rawText.trim();
                     try {
                         if (navigator.clipboard?.writeText) {
-                            await navigator.clipboard.writeText(diagramText);
+                            await navigator.clipboard.writeText(textToCopy);
                         } else {
                             const textarea = document.createElement('textarea');
-                            textarea.value = diagramText;
+                            textarea.value = textToCopy;
                             textarea.style.position = 'fixed';
                             textarea.style.opacity = '0';
                             document.body.appendChild(textarea);
@@ -429,25 +497,125 @@ document.addEventListener('DOMContentLoaded', () => {
                             document.execCommand('copy');
                             document.body.removeChild(textarea);
                         }
-                        copyBtn.textContent = 'Copied';
+                        codeCopyBtn.textContent = 'Copied';
                         setTimeout(() => {
-                            copyBtn.textContent = 'Copy source';
+                            codeCopyBtn.textContent = 'Copy';
                         }, 1200);
                     } catch {
-                        copyBtn.textContent = 'Failed';
+                        codeCopyBtn.textContent = 'Failed';
                         setTimeout(() => {
-                            copyBtn.textContent = 'Copy source';
+                            codeCopyBtn.textContent = 'Copy';
                         }, 1200);
                     }
                 });
 
-                wrapper.appendChild(copyBtn);
-                wrapper.appendChild(diagram);
+                codeWrap.appendChild(codeCopyBtn);
+                codeWrap.appendChild(codePre);
+
+                const diagramBody = document.createElement('div');
+                diagramBody.className = 'mermaid-body';
+                diagramBody.appendChild(diagramViewport);
+                diagramBody.appendChild(codeWrap);
+
+                const renderId = `mermaid-${Date.now()}-${i}-${Math.random().toString(16).slice(2, 6)}`;
+                panzoom.id = renderId;
+                wrapper.appendChild(header);
+                wrapper.appendChild(diagramBody);
 
                 try {
                     const result = await mermaid.render(renderId, diagramText);
-                    diagram.innerHTML = result?.svg || '';
+                    panzoom.innerHTML = result?.svg || '';
                     pre.replaceWith(wrapper);
+                    codeWrap.hidden = true;
+
+                    let scale = 1;
+                    let translateX = 0;
+                    let translateY = 0;
+                    let isDragging = false;
+                    let startX = 0;
+                    let startY = 0;
+
+                    const applyTransform = () => {
+                        panzoom.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+                    };
+
+                    const clampScale = (value) => Math.min(4, Math.max(0.4, value));
+
+                    const setMode = (mode) => {
+                        const isCode = mode === 'code';
+                        wrapper.classList.toggle('show-code', isCode);
+                        codeWrap.hidden = !isCode;
+                        diagramViewport.hidden = isCode;
+                        codeTab.classList.toggle('is-active', isCode);
+                        previewTab.classList.toggle('is-active', !isCode);
+                    };
+
+                    codeTab.addEventListener('click', () => setMode('code'));
+                    previewTab.addEventListener('click', () => setMode('preview'));
+
+                    zoomInBtn.addEventListener('click', () => {
+                        scale = clampScale(scale + 0.2);
+                        applyTransform();
+                    });
+
+                    zoomOutBtn.addEventListener('click', () => {
+                        scale = clampScale(scale - 0.2);
+                        applyTransform();
+                    });
+
+                    resetBtn.addEventListener('click', () => {
+                        scale = 1;
+                        translateX = 0;
+                        translateY = 0;
+                        applyTransform();
+                    });
+
+                    downloadBtn.addEventListener('click', () => {
+                        const svg = panzoom.querySelector('svg');
+                        if (!svg) return;
+                        const serializer = new XMLSerializer();
+                        let source = serializer.serializeToString(svg);
+                        if (!source.match(/^<svg[^>]+xmlns=/)) {
+                            source = source.replace(/^<svg/, '<svg xmlns="http://www.w3.org/2000/svg"');
+                        }
+                        const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = 'diagram.svg';
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+                    });
+
+                    diagramViewport.addEventListener('pointerdown', (event) => {
+                        if (diagramViewport.hidden) return;
+                        isDragging = true;
+                        diagramViewport.classList.add('is-grabbing');
+                        startX = event.clientX - translateX;
+                        startY = event.clientY - translateY;
+                        diagramViewport.setPointerCapture(event.pointerId);
+                    });
+
+                    diagramViewport.addEventListener('pointermove', (event) => {
+                        if (!isDragging) return;
+                        translateX = event.clientX - startX;
+                        translateY = event.clientY - startY;
+                        applyTransform();
+                    });
+
+                    diagramViewport.addEventListener('pointerup', (event) => {
+                        isDragging = false;
+                        diagramViewport.classList.remove('is-grabbing');
+                        diagramViewport.releasePointerCapture(event.pointerId);
+                    });
+
+                    diagramViewport.addEventListener('pointercancel', (event) => {
+                        isDragging = false;
+                        diagramViewport.classList.remove('is-grabbing');
+                        diagramViewport.releasePointerCapture(event.pointerId);
+                    });
                 } catch (err) {
                     const errorLabel = document.createElement('div');
                     errorLabel.className = 'mermaid-error';
