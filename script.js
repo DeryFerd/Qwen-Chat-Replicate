@@ -251,6 +251,126 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const mermaidRenderState = new WeakMap();
 
+    const MERMAID_DIRECTIVE_REGEX = /^\s*(flowchart|graph|sequenceDiagram|stateDiagram(?:-v2)?|gantt|classDiagram|erDiagram|journey|mindmap|timeline|pie|gitGraph|quadrantChart|requirementDiagram|block(?:-beta)?)\b/i;
+    const MERMAID_FLOW_DIRECTIVE_REGEX = /^\s*(flowchart|graph)\b/i;
+
+    function isMermaidNodeRef(raw) {
+        const trimmed = raw.trim();
+        if (!trimmed) return false;
+        if (trimmed.includes(':::')) return true;
+        if (/^[A-Za-z0-9_]+$/.test(trimmed)) return true;
+        if (/[{\[(]/.test(trimmed)) return true;
+        return false;
+    }
+
+    function toMermaidNode(raw, registry) {
+        const trimmed = raw.trim();
+        if (!trimmed) return '';
+        if (isMermaidNodeRef(trimmed)) return trimmed;
+
+        const label = trimmed.replace(/^"(.*)"$/s, '$1').trim();
+        if (!label) return trimmed;
+        const existing = registry.get(label);
+        if (existing) return `${existing}["${label.replace(/"/g, '\\"')}"]`;
+        const id = `node${registry.size + 1}`;
+        registry.set(label, id);
+        return `${id}["${label.replace(/"/g, '\\"')}"]`;
+    }
+
+    function normalizeFlowchartEdges(diagramText) {
+        const lines = diagramText.split(/\r?\n/);
+        if (!lines.length) return diagramText;
+        const header = lines[0];
+        const output = [header];
+        const registry = new Map();
+
+        lines.slice(1).forEach(line => {
+            const raw = line.trim();
+            if (!raw) {
+                output.push(line);
+                return;
+            }
+            if (/^\s*%%/.test(raw)) {
+                output.push(line);
+                return;
+            }
+            if (/^\s*(subgraph|end|classDef|class|style|click|linkStyle)\b/i.test(raw)) {
+                output.push(line);
+                return;
+            }
+            if (!raw.includes('-->')) {
+                output.push(line);
+                return;
+            }
+
+            const edgeMatch = raw.match(/^(.*?)\s*-->\s*(.*)$/);
+            if (!edgeMatch) {
+                output.push(line);
+                return;
+            }
+            let leftRaw = edgeMatch[1] || '';
+            let rightRaw = edgeMatch[2] || '';
+            let edgeLabel = '';
+
+            if (rightRaw.trim().startsWith('|')) {
+                const trimmedRight = rightRaw.trim();
+                const endIndex = trimmedRight.indexOf('|', 1);
+                if (endIndex > 1) {
+                    edgeLabel = trimmedRight.slice(1, endIndex);
+                    rightRaw = trimmedRight.slice(endIndex + 1).trim();
+                }
+            }
+
+            const leftNode = toMermaidNode(leftRaw, registry);
+            const rightNode = toMermaidNode(rightRaw, registry);
+            if (!leftNode || !rightNode) {
+                output.push(line);
+                return;
+            }
+
+            const labelSegment = edgeLabel ? `|${edgeLabel}|` : '';
+            output.push(`${leftNode} -->${labelSegment} ${rightNode}`);
+        });
+
+        return output.join('\n');
+    }
+
+    function normalizeMermaidSource(raw) {
+        let text = String(raw || '');
+        text = text.replace(/^\s*```(?:mermaid)?\s*/i, '').replace(/\s*```\s*$/i, '');
+        const lines = text.split(/\r?\n/).filter(line => !/^\s*```/.test(line));
+        if (!lines.length) return '';
+
+        let startIndex = lines.findIndex(line => MERMAID_DIRECTIVE_REGEX.test(line));
+        if (startIndex > 0) {
+            lines.splice(0, startIndex);
+        }
+
+        let cleaned = lines.join('\n').trim();
+        if (!cleaned) return '';
+
+        cleaned = cleaned
+            .replace(/^\s*sequence\s+diagram\b/i, 'sequenceDiagram')
+            .replace(/^\s*state\s+diagram\s*-?\s*v2\b/i, 'stateDiagram-v2')
+            .replace(/^\s*state\s+diagram\b/i, 'stateDiagram')
+            .replace(/^\s*flow\s*chart\b/i, 'flowchart')
+            .replace(/^\s*block\s*beta\b/i, 'block-beta');
+
+        if (!MERMAID_DIRECTIVE_REGEX.test(cleaned)) {
+            cleaned = `flowchart LR\n${cleaned}`;
+        }
+
+        if (/^\s*(graph|flowchart)\b/i.test(cleaned) && !/(graph|flowchart)\s+(LR|RL|TB|BT|TD)\b/i.test(cleaned)) {
+            cleaned = cleaned.replace(/^\s*(graph|flowchart)\b/i, '$1 LR');
+        }
+
+        if (MERMAID_FLOW_DIRECTIVE_REGEX.test(cleaned)) {
+            cleaned = normalizeFlowchartEdges(cleaned);
+        }
+
+        return cleaned;
+    }
+
     async function renderMermaid(container) {
         if (!window.mermaid) return;
         try {
@@ -279,10 +399,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 const code = codeBlocks[i];
                 const pre = code.closest('pre');
                 if (!pre) continue;
-                let diagramText = code.textContent || '';
-                if (/^\s*(graph|flowchart)\b/i.test(diagramText) && !/(graph|flowchart)\s+(LR|RL|TB|BT)\b/i.test(diagramText)) {
-                    diagramText = diagramText.replace(/^\s*(graph|flowchart)\b/i, '$1 LR');
-                }
+                const rawText = code.textContent || '';
+                const diagramText = normalizeMermaidSource(rawText);
+                if (!diagramText) continue;
                 const wrapper = document.createElement('div');
                 wrapper.className = 'mermaid-wrapper';
                 const diagram = document.createElement('div');
@@ -329,10 +448,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     const result = await mermaid.render(renderId, diagramText);
                     diagram.innerHTML = result?.svg || '';
                     pre.replaceWith(wrapper);
-                } catch {
+                } catch (err) {
                     const errorLabel = document.createElement('div');
                     errorLabel.className = 'mermaid-error';
-                    errorLabel.textContent = 'Diagram render failed';
+                    const message = err?.message ? String(err.message).slice(0, 120) : '';
+                    errorLabel.textContent = message ? `Diagram render failed: ${message}` : 'Diagram render failed';
                     pre.insertAdjacentElement('beforebegin', errorLabel);
                 }
             }
