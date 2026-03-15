@@ -686,6 +686,8 @@ ul {
     flex-direction: column;
     padding-bottom: 120px;
     /* Space for input */
+    position: relative;
+    z-index: 0;
 }
 
 .chat-area::-webkit-scrollbar {
@@ -1287,6 +1289,7 @@ ul {
     display: flex;
     flex-direction: column;
     align-items: center;
+    z-index: 12;
 }
 
 .attachment-strip {
