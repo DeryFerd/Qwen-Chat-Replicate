@@ -446,41 +446,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 actions.appendChild(resetBtn);
                 actions.appendChild(downloadBtn);
 
-                const tabs = document.createElement('div');
-                tabs.className = 'mermaid-tabs';
-                const codeTab = document.createElement('button');
-                codeTab.type = 'button';
-                codeTab.className = 'mermaid-tab';
-                codeTab.textContent = 'Code';
-                const previewTab = document.createElement('button');
-                previewTab.type = 'button';
-                previewTab.className = 'mermaid-tab is-active';
-                previewTab.textContent = 'Preview';
-                tabs.appendChild(codeTab);
-                tabs.appendChild(previewTab);
-
-                headerRight.appendChild(actions);
-                headerRight.appendChild(tabs);
-                header.appendChild(title);
-                header.appendChild(headerRight);
-
-                const diagramViewport = document.createElement('div');
-                diagramViewport.className = 'mermaid-viewport';
-                const panzoom = document.createElement('div');
-                panzoom.className = 'mermaid-panzoom';
-                diagramViewport.appendChild(panzoom);
-
-                const codeWrap = document.createElement('div');
-                codeWrap.className = 'mermaid-code-wrap';
-                const codePre = document.createElement('pre');
-                codePre.className = 'mermaid-code-view';
-                codePre.textContent = rawText.trim();
-
-                const codeCopyBtn = document.createElement('button');
-                codeCopyBtn.type = 'button';
-                codeCopyBtn.className = 'code-copy-btn mermaid-code-copy';
-                codeCopyBtn.textContent = 'Copy';
-                codeCopyBtn.addEventListener('click', async (event) => {
+                const codeHeaderCopyBtn = document.createElement('button');
+                codeHeaderCopyBtn.type = 'button';
+                codeHeaderCopyBtn.className = 'mermaid-code-copy-btn';
+                codeHeaderCopyBtn.title = 'Copy code';
+                codeHeaderCopyBtn.textContent = 'Copy';
+                codeHeaderCopyBtn.addEventListener('click', async (event) => {
                     event.preventDefault();
                     const textToCopy = rawText.trim();
                     try {
@@ -497,19 +468,49 @@ document.addEventListener('DOMContentLoaded', () => {
                             document.execCommand('copy');
                             document.body.removeChild(textarea);
                         }
-                        codeCopyBtn.textContent = 'Copied';
+                        codeHeaderCopyBtn.textContent = 'Copied';
                         setTimeout(() => {
-                            codeCopyBtn.textContent = 'Copy';
+                            codeHeaderCopyBtn.textContent = 'Copy';
                         }, 1200);
                     } catch {
-                        codeCopyBtn.textContent = 'Failed';
+                        codeHeaderCopyBtn.textContent = 'Failed';
                         setTimeout(() => {
-                            codeCopyBtn.textContent = 'Copy';
+                            codeHeaderCopyBtn.textContent = 'Copy';
                         }, 1200);
                     }
                 });
 
-                codeWrap.appendChild(codeCopyBtn);
+                const tabs = document.createElement('div');
+                tabs.className = 'mermaid-tabs';
+                const codeTab = document.createElement('button');
+                codeTab.type = 'button';
+                codeTab.className = 'mermaid-tab';
+                codeTab.textContent = 'Code';
+                const previewTab = document.createElement('button');
+                previewTab.type = 'button';
+                previewTab.className = 'mermaid-tab is-active';
+                previewTab.textContent = 'Preview';
+                tabs.appendChild(codeTab);
+                tabs.appendChild(previewTab);
+
+                headerRight.appendChild(actions);
+                headerRight.appendChild(codeHeaderCopyBtn);
+                headerRight.appendChild(tabs);
+                header.appendChild(title);
+                header.appendChild(headerRight);
+
+                const diagramViewport = document.createElement('div');
+                diagramViewport.className = 'mermaid-viewport';
+                const panzoom = document.createElement('div');
+                panzoom.className = 'mermaid-panzoom';
+                diagramViewport.appendChild(panzoom);
+
+                const codeWrap = document.createElement('div');
+                codeWrap.className = 'mermaid-code-wrap';
+                const codePre = document.createElement('pre');
+                codePre.className = 'mermaid-code-view';
+                codePre.textContent = rawText.trim();
+
                 codeWrap.appendChild(codePre);
 
                 const diagramBody = document.createElement('div');

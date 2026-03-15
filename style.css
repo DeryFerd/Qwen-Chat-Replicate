@@ -1171,6 +1171,30 @@ ul {
     color: var(--text-primary);
 }
 
+.mermaid-code-copy-btn {
+    border-radius: var(--radius-sm);
+    padding: 4px 10px;
+    font-size: 12px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-surface-hover);
+    color: var(--text-secondary);
+    display: none;
+}
+
+.mermaid-code-copy-btn:hover {
+    color: var(--text-primary);
+}
+
+.mermaid-wrapper.show-code .mermaid-actions {
+    display: none;
+}
+
+.mermaid-wrapper.show-code .mermaid-code-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
 .mermaid-body {
     position: relative;
 }
@@ -1230,12 +1254,11 @@ ul {
     color: var(--text-primary);
     overflow: auto;
     max-height: 420px;
+    scrollbar-width: none;
 }
 
-.mermaid-code-copy {
-    position: absolute;
-    top: 8px;
-    right: 10px;
+.mermaid-code-view::-webkit-scrollbar {
+    display: none;
 }
 
 .mermaid-error {
