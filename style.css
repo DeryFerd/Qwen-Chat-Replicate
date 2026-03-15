@@ -865,6 +865,10 @@ ul {
     gap: 8px;
 }
 
+.message-content.has-mermaid {
+    max-width: 100%;
+}
+
 .thinking-block {
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 16px;
@@ -1117,6 +1121,8 @@ ul {
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 10px;
+    position: relative;
+    z-index: 2;
 }
 
 .mermaid-title {
@@ -1211,12 +1217,14 @@ ul {
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     background: var(--bg-main);
-    overflow: hidden;
+    overflow: auto;
     cursor: grab;
     user-select: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    scrollbar-width: none;
+}
+
+.mermaid-viewport::-webkit-scrollbar {
+    display: none;
 }
 
 .mermaid-wrapper.show-code .mermaid-viewport {
@@ -1231,17 +1239,23 @@ ul {
     cursor: grabbing;
 }
 
+.mermaid-stage {
+    min-width: 100%;
+    min-height: 100%;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px;
+    box-sizing: border-box;
+}
+
 .mermaid-panzoom {
-    transform-origin: 0 0;
-    display: inline-block;
-    max-width: 100%;
+    display: block;
+    flex: 0 0 auto;
 }
 
 .mermaid-panzoom svg {
-    max-width: 100%;
-    height: auto;
     display: block;
-    margin: 0 auto;
 }
 
 .mermaid-code-wrap {

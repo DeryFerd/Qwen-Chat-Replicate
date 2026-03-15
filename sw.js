@@ -1,4 +1,4 @@
-const CACHE_NAME = 'qwen-chat-static-v2';
+const CACHE_NAME = 'qwen-chat-static-v3';
 
 const STATIC_ASSETS = [
   '/',

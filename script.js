@@ -2,6 +2,10 @@ if (window.mermaid) {
     mermaid.initialize({
         startOnLoad: false,
         theme: 'dark',
+        securityLevel: 'loose',
+        flowchart: {
+            htmlLabels: true
+        },
         themeVariables: {
             primaryColor: '#6366f1',
             primaryTextColor: '#ECEFF4',
@@ -108,7 +112,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const thinkingAnimationState = new WeakMap();
 
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js');
+        const isLocalhost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+        if (isLocalhost) {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+                registrations.forEach(registration => registration.unregister());
+            }).catch(() => {
+                // Ignore local service worker cleanup failures.
+            });
+            if (window.caches?.keys) {
+                caches.keys().then(keys => Promise.all(keys.map(key => caches.delete(key)))).catch(() => {
+                    // Ignore local cache cleanup failures.
+                });
+            }
+        } else {
+            navigator.serviceWorker.register('/sw.js').catch(() => {
+                // Ignore registration failures.
+            });
+        }
     }
 
     function getSelectedModel() {
@@ -365,6 +385,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return output.join('\n');
     }
 
+    function stripInlineMermaidClasses(diagramText) {
+        return diagramText.replace(/\s*:::\s*[A-Za-z_][\w-]*/g, '');
+    }
+
+    function stripMermaidStyling(diagramText) {
+        return diagramText
+            .split(/\r?\n/)
+            .filter(line => !/^\s*(classDef|class|style|linkStyle|click)\b/i.test(line.trim()))
+            .join('\n');
+    }
+
+    function stripMermaidComments(diagramText) {
+        return diagramText
+            .split(/\r?\n/)
+            .filter(line => !/^\s*%%/.test(line))
+            .join('\n');
+    }
+
     function normalizeMermaidSource(raw) {
         let text = String(raw || '');
         text = text.replace(/^\s*```(?:mermaid)?\s*/i, '').replace(/\s*```\s*$/i, '');
@@ -394,13 +432,27 @@ document.addEventListener('DOMContentLoaded', () => {
             cleaned = cleaned.replace(/^\s*(graph|flowchart)\b/i, '$1 LR');
         }
 
-        if (MERMAID_FLOW_DIRECTIVE_REGEX.test(cleaned)) {
-            cleaned = normalizeFlowchartEdges(cleaned);
-        }
-
         cleaned = normalizeSubgraphLines(cleaned);
 
         return cleaned;
+    }
+
+    function buildMermaidRenderCandidates(raw) {
+        const base = normalizeMermaidSource(raw);
+        const candidates = [base];
+
+        const noInlineClasses = stripInlineMermaidClasses(base);
+        candidates.push(noInlineClasses);
+        candidates.push(stripMermaidStyling(noInlineClasses));
+        candidates.push(stripMermaidStyling(stripMermaidComments(noInlineClasses)));
+
+        if (MERMAID_FLOW_DIRECTIVE_REGEX.test(base)) {
+            candidates.push(normalizeFlowchartEdges(base));
+            candidates.push(stripMermaidStyling(normalizeFlowchartEdges(noInlineClasses)));
+            candidates.push(stripMermaidStyling(stripMermaidComments(normalizeFlowchartEdges(noInlineClasses))));
+        }
+
+        return candidates.filter((candidate, index, arr) => candidate && arr.indexOf(candidate) === index);
     }
 
     async function renderMermaid(container) {
@@ -432,8 +484,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const pre = code.closest('pre');
                 if (!pre) continue;
                 const rawText = code.textContent || '';
-                const diagramText = normalizeMermaidSource(rawText);
-                if (!diagramText) continue;
+                const diagramCandidates = buildMermaidRenderCandidates(rawText);
+                if (!diagramCandidates.length) continue;
                 const wrapper = document.createElement('div');
                 wrapper.className = 'mermaid-wrapper';
 
@@ -470,7 +522,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const downloadBtn = document.createElement('button');
                 downloadBtn.type = 'button';
                 downloadBtn.className = 'mermaid-action-btn';
-                downloadBtn.title = 'Download SVG';
+                downloadBtn.title = 'Download PNG';
                 downloadBtn.innerHTML = '<i class="ph ph-download-simple"></i>';
 
                 actions.appendChild(zoomOutBtn);
@@ -533,9 +585,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 const diagramViewport = document.createElement('div');
                 diagramViewport.className = 'mermaid-viewport';
+                const diagramStage = document.createElement('div');
+                diagramStage.className = 'mermaid-stage';
                 const panzoom = document.createElement('div');
                 panzoom.className = 'mermaid-panzoom';
-                diagramViewport.appendChild(panzoom);
+                diagramStage.appendChild(panzoom);
+                diagramViewport.appendChild(diagramStage);
 
                 const codeWrap = document.createElement('div');
                 codeWrap.className = 'mermaid-code-wrap';
@@ -555,54 +610,149 @@ document.addEventListener('DOMContentLoaded', () => {
                 wrapper.appendChild(header);
                 wrapper.appendChild(diagramBody);
 
+                let scale = 1;
+                let isDragging = false;
+                let startX = 0;
+                let startY = 0;
+                let startScrollLeft = 0;
+                let startScrollTop = 0;
+                let baseWidth = 0;
+                let baseHeight = 0;
+
+                const clampScale = (value) => Math.min(4, Math.max(0.4, value));
+
+                const setMode = (mode) => {
+                    const isCode = mode === 'code';
+                    wrapper.classList.toggle('show-code', isCode);
+                    codeWrap.hidden = !isCode;
+                    diagramViewport.hidden = isCode;
+                    codeTab.classList.toggle('is-active', isCode);
+                    previewTab.classList.toggle('is-active', !isCode);
+                };
+
+                codeTab.addEventListener('click', () => setMode('code'));
+                previewTab.addEventListener('click', () => setMode('preview'));
+
+                const centerViewport = () => {
+                    requestAnimationFrame(() => {
+                        diagramViewport.scrollLeft = Math.max(0, (diagramViewport.scrollWidth - diagramViewport.clientWidth) / 2);
+                        diagramViewport.scrollTop = 0;
+                    });
+                };
+
+                const applyZoom = () => {
+                    const svg = panzoom.querySelector('svg');
+                    if (!svg || !baseWidth || !baseHeight) return;
+                    const width = baseWidth * scale;
+                    const height = baseHeight * scale;
+                    panzoom.style.width = `${width}px`;
+                    panzoom.style.height = `${height}px`;
+                    svg.style.width = `${width}px`;
+                    svg.style.height = `${height}px`;
+                };
+
+                zoomInBtn.addEventListener('click', () => {
+                    scale = clampScale(scale + 0.2);
+                    applyZoom();
+                    centerViewport();
+                });
+
+                zoomOutBtn.addEventListener('click', () => {
+                    scale = clampScale(scale - 0.2);
+                    applyZoom();
+                    centerViewport();
+                });
+
+                resetBtn.addEventListener('click', () => {
+                    scale = 1;
+                    applyZoom();
+                    centerViewport();
+                });
+
+                diagramViewport.addEventListener('pointerdown', (event) => {
+                    if (diagramViewport.hidden) return;
+                    isDragging = true;
+                    diagramViewport.classList.add('is-grabbing');
+                    startX = event.clientX;
+                    startY = event.clientY;
+                    startScrollLeft = diagramViewport.scrollLeft;
+                    startScrollTop = diagramViewport.scrollTop;
+                    diagramViewport.setPointerCapture(event.pointerId);
+                });
+
+                diagramViewport.addEventListener('pointermove', (event) => {
+                    if (!isDragging) return;
+                    diagramViewport.scrollLeft = startScrollLeft - (event.clientX - startX);
+                    diagramViewport.scrollTop = startScrollTop - (event.clientY - startY);
+                });
+
+                diagramViewport.addEventListener('pointerup', (event) => {
+                    isDragging = false;
+                    diagramViewport.classList.remove('is-grabbing');
+                    diagramViewport.releasePointerCapture(event.pointerId);
+                });
+
+                diagramViewport.addEventListener('pointercancel', (event) => {
+                    isDragging = false;
+                    diagramViewport.classList.remove('is-grabbing');
+                    diagramViewport.releasePointerCapture(event.pointerId);
+                });
+
                 try {
                     pre.replaceWith(wrapper);
-                    const result = await mermaid.render(renderId, diagramText);
+                    let result = null;
+                    let lastRenderError = null;
+
+                    for (let candidateIndex = 0; candidateIndex < diagramCandidates.length; candidateIndex += 1) {
+                        const candidate = diagramCandidates[candidateIndex];
+                        try {
+                            result = await mermaid.render(`${renderId}-${candidateIndex}`, candidate);
+                            lastRenderError = null;
+                            break;
+                        } catch (candidateError) {
+                            lastRenderError = candidateError;
+                        }
+                    }
+
+                    if (!result) {
+                        throw lastRenderError || new Error('Unable to render Mermaid diagram');
+                    }
+
                     panzoom.innerHTML = result?.svg || '';
+                    const svgEl = panzoom.querySelector('svg');
+                    if (svgEl) {
+                        const widthAttr = svgEl.getAttribute('width') || '';
+                        const heightAttr = svgEl.getAttribute('height') || '';
+                        const viewBox = svgEl.viewBox?.baseVal;
+                        if ((!widthAttr || widthAttr.includes('%')) && viewBox?.width) {
+                            svgEl.setAttribute('width', String(viewBox.width));
+                        }
+                        if ((!heightAttr || heightAttr.includes('%')) && viewBox?.height) {
+                            svgEl.setAttribute('height', String(viewBox.height));
+                        }
+                        const bbox = (() => {
+                            try {
+                                return svgEl.getBBox();
+                            } catch {
+                                return null;
+                            }
+                        })();
+                        baseWidth = parseFloat(svgEl.getAttribute('width') || '') || viewBox?.width || bbox?.width || 0;
+                        baseHeight = parseFloat(svgEl.getAttribute('height') || '') || viewBox?.height || bbox?.height || 0;
+                        svgEl.style.maxWidth = 'none';
+                        svgEl.style.display = 'block';
+                    }
+                    if (!result?.svg || !result.svg.trim()) {
+                        throw new Error('Empty SVG output');
+                    }
+                    if (!baseWidth || !baseHeight) {
+                        throw new Error('Invalid SVG size');
+                    }
                     codeWrap.hidden = true;
                     container.classList.add('has-mermaid');
-
-                    let scale = 1;
-                    let translateX = 0;
-                    let translateY = 0;
-                    let isDragging = false;
-                    let startX = 0;
-                    let startY = 0;
-
-                    const applyTransform = () => {
-                        panzoom.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
-                    };
-
-                    const clampScale = (value) => Math.min(4, Math.max(0.4, value));
-
-                    const setMode = (mode) => {
-                        const isCode = mode === 'code';
-                        wrapper.classList.toggle('show-code', isCode);
-                        codeWrap.hidden = !isCode;
-                        diagramViewport.hidden = isCode;
-                        codeTab.classList.toggle('is-active', isCode);
-                        previewTab.classList.toggle('is-active', !isCode);
-                    };
-
-                    codeTab.addEventListener('click', () => setMode('code'));
-                    previewTab.addEventListener('click', () => setMode('preview'));
-
-                    zoomInBtn.addEventListener('click', () => {
-                        scale = clampScale(scale + 0.2);
-                        applyTransform();
-                    });
-
-                    zoomOutBtn.addEventListener('click', () => {
-                        scale = clampScale(scale - 0.2);
-                        applyTransform();
-                    });
-
-                    resetBtn.addEventListener('click', () => {
-                        scale = 1;
-                        translateX = 0;
-                        translateY = 0;
-                        applyTransform();
-                    });
+                    container.closest('.message-content')?.classList.add('has-mermaid');
+                    applyZoom();
+                    centerViewport();
 
                     downloadBtn.addEventListener('click', () => {
                         const svg = panzoom.querySelector('svg');
@@ -657,34 +807,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         };
                         img.src = url;
                     });
-
-                    diagramViewport.addEventListener('pointerdown', (event) => {
-                        if (diagramViewport.hidden) return;
-                        isDragging = true;
-                        diagramViewport.classList.add('is-grabbing');
-                        startX = event.clientX - translateX;
-                        startY = event.clientY - translateY;
-                        diagramViewport.setPointerCapture(event.pointerId);
-                    });
-
-                    diagramViewport.addEventListener('pointermove', (event) => {
-                        if (!isDragging) return;
-                        translateX = event.clientX - startX;
-                        translateY = event.clientY - startY;
-                        applyTransform();
-                    });
-
-                    diagramViewport.addEventListener('pointerup', (event) => {
-                        isDragging = false;
-                        diagramViewport.classList.remove('is-grabbing');
-                        diagramViewport.releasePointerCapture(event.pointerId);
-                    });
-
-                    diagramViewport.addEventListener('pointercancel', (event) => {
-                        isDragging = false;
-                        diagramViewport.classList.remove('is-grabbing');
-                        diagramViewport.releasePointerCapture(event.pointerId);
-                    });
                 } catch (err) {
                     if (pre.parentNode) {
                         pre.replaceWith(wrapper);
@@ -699,6 +821,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     const message = err?.message ? String(err.message).slice(0, 120) : '';
                     errorLabel.textContent = message ? `Diagram render failed: ${message}` : 'Diagram render failed';
                     header.insertAdjacentElement('afterend', errorLabel);
+                    container.classList.add('has-mermaid');
+                    container.closest('.message-content')?.classList.add('has-mermaid');
                 }
             }
 
@@ -3637,6 +3761,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
+            messagesContainer.appendChild(messageDiv);
+
             updateAssistantMessageState(messageDiv, {
                 content,
                 thinking: messageData.thinking || '',
@@ -3660,6 +3786,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
 
+            messagesContainer.appendChild(messageDiv);
+
             renderMessageBubble(messageDiv.querySelector('.message-bubble'), 'user', content);
 
             chatArea.scrollTo({
@@ -3667,8 +3795,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 behavior: 'smooth'
             });
         }
-
-        messagesContainer.appendChild(messageDiv);
 
         // Scroll to bottom
         chatArea.scrollTo({
