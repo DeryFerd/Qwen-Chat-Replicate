@@ -492,9 +492,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function extractExplicitMemory(text) {
         if (!text) return '';
-        const match = text.match(/^\s*(simpan|ingat)\s+memory\s*[:\-]?\s*(?:bahwa\s+)?(.+)$/i);
-        if (!match) return '';
-        return (match[2] || '').trim();
+        const patterns = [
+            /(?:^|[.!?]\s*)(?:tolong\s+)?(?:simpan|catat|ingat|save|remember)\s+(?:di\s+)?(?:memory|memori|ingatan)\s*[:\-]?\s*(?:bahwa|kalau|if|that)?\s*(.+)$/i,
+            /(?:^|[.!?]\s*)(?:tolong\s+)?(?:simpan|catat)\s+(?:ini\s+)?(?:sebagai\s+)?(?:memory|memori|ingatan)\s*[:\-]?\s*(.+)$/i,
+            /(?:^|[.!?]\s*)(?:tolong\s+)?ingat\s+(?:bahwa|kalau|if|that)?\s*(.+)$/i,
+            /(?:^|[.!?]\s*)(?:tolong\s+)?remember\s+(?:that\s+)?(.+)$/i
+        ];
+
+        for (const pattern of patterns) {
+            const match = text.match(pattern);
+            if (match && match[1]) {
+                const cleaned = match[1].trim().replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').trim();
+                if (cleaned) return cleaned;
+            }
+        }
+        return '';
     }
 
     function flashMemorySaved() {
