@@ -1058,12 +1058,15 @@ ul {
 }
 
 .message.assistant .message-bubble pre {
-    position: relative;
     padding: 14px 16px;
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     overflow-x: auto;
     margin: 12px 0;
+}
+
+.code-block-wrapper {
+    position: relative;
 }
 
 .message.assistant .message-bubble pre code {
@@ -1097,7 +1100,12 @@ ul {
     border-radius: var(--radius-md);
     padding: 16px;
     margin: 12px 0;
+    overflow: hidden;
+}
+
+.mermaid-diagram {
     overflow-x: auto;
+    padding-top: 8px;
 }
 
 .mermaid-diagram svg {
@@ -1194,6 +1202,7 @@ ul {
     padding: 4px 8px;
     font-size: 12px;
     line-height: 1;
+    z-index: 2;
 }
 
 .code-copy-btn:hover {

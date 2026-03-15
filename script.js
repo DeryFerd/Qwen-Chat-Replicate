@@ -155,14 +155,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function ensureCopyButtons(container) {
         container.querySelectorAll('pre').forEach(pre => {
-            if (pre.querySelector('.code-copy-btn')) return;
-
             const code = pre.querySelector('code');
             if (!code) return;
             if (code.classList.contains('language-mermaid')) return;
 
+            const existingWrapper = pre.closest('.code-block-wrapper');
+            const wrapper = existingWrapper || document.createElement('div');
+            if (!existingWrapper) {
+                wrapper.className = 'code-block-wrapper';
+                pre.parentNode?.insertBefore(wrapper, pre);
+                wrapper.appendChild(pre);
+            }
+
+            if (wrapper.querySelector('.code-copy-btn')) return;
+
             pre.classList.add('code-block');
-            pre.style.position = 'relative';
 
             if (window.hljs) {
                 try {
@@ -207,7 +214,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
-            pre.appendChild(button);
+            wrapper.appendChild(button);
         });
     }
 
