@@ -1749,6 +1749,11 @@ ul {
     font-size: 12px;
 }
 
+.memory-counter.memory-saved {
+    color: var(--accent);
+    font-weight: 600;
+}
+
 .tag-filter-bar {
     display: flex;
     gap: 8px;

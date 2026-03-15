@@ -490,6 +490,23 @@ document.addEventListener('DOMContentLoaded', () => {
         memoryCounter.textContent = `${memoryInput.value.length} / 120`;
     }
 
+    function extractExplicitMemory(text) {
+        if (!text) return '';
+        const match = text.match(/^\s*(simpan|ingat)\s+memory\s*[:\-]?\s*(?:bahwa\s+)?(.+)$/i);
+        if (!match) return '';
+        return (match[2] || '').trim();
+    }
+
+    function flashMemorySaved() {
+        if (!memoryCounter) return;
+        memoryCounter.classList.add('memory-saved');
+        memoryCounter.textContent = 'Memory saved';
+        setTimeout(() => {
+            memoryCounter.classList.remove('memory-saved');
+            updateMemoryCounter();
+        }, 1600);
+    }
+
     function submitMemoryInput() {
         if (!memoryInput) return;
         const value = memoryInput.value.trim();
@@ -557,7 +574,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     extracted = JSON.parse(raw);
                 } catch {
-                    extracted = [];
+                    const start = raw.indexOf('[');
+                    const end = raw.lastIndexOf(']');
+                    if (start !== -1 && end > start) {
+                        try {
+                            extracted = JSON.parse(raw.slice(start, end + 1));
+                        } catch {
+                            extracted = [];
+                        }
+                    } else {
+                        extracted = [];
+                    }
                 }
             }
 
@@ -570,8 +597,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (added) changed = true;
             }
 
-            if (changed && memoryModal?.classList.contains('show')) {
-                renderMemoryList();
+            if (changed) {
+                if (memoryModal?.classList.contains('show')) {
+                    renderMemoryList();
+                }
+                flashMemorySaved();
             }
         } catch {
             // Silent failure
@@ -2036,6 +2066,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const text = chatInput.value.trim();
         if (!text && attachedImages.length === 0) return;
         if (activeAbortController) return;
+
+        const explicitMemory = extractExplicitMemory(text);
+        if (explicitMemory) {
+            const added = addMemoryText(explicitMemory);
+            if (added) {
+                if (memoryModal?.classList.contains('show')) {
+                    renderMemoryList();
+                }
+                flashMemorySaved();
+            }
+        }
 
         if (welcomeScreen.style.display !== 'none') {
             welcomeScreen.style.display = 'none';
