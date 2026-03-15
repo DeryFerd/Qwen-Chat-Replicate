@@ -85,11 +85,20 @@ document.addEventListener('DOMContentLoaded', () => {
     let artifactRefreshBtn = null;
     let artifactCopyBtn = null;
     let artifactCloseBtn = null;
+    let artifactTitleEl = null;
     let artifactTabs = [];
     let activeArtifactTab = 'preview';
-    let artifactState = { code: '', lang: '', previewSupported: true };
+    let artifactState = { code: '', lang: '', previewSupported: true, isViz: false };
 
     const CHAT_API_URL = '/api/chat';
+    const VIZ_SIGNALS = [
+        'new Chart(',
+        'Chart.register',
+        'd3.select',
+        'Plotly.newPlot',
+        'echarts.init',
+        'vega.embed'
+    ];
 
     // --- state management ---
     let chats = JSON.parse(localStorage.getItem('qwen_chats') || '[]');
@@ -960,6 +969,7 @@ document.addEventListener('DOMContentLoaded', () => {
         artifactRefreshBtn = artifactPanel.querySelector('#artifact-refresh-btn');
         artifactCopyBtn = artifactPanel.querySelector('#artifact-copy-btn');
         artifactCloseBtn = artifactPanel.querySelector('#artifact-close-btn');
+        artifactTitleEl = artifactPanel.querySelector('.artifact-title');
         artifactTabs = Array.from(artifactPanel.querySelectorAll('.artifact-tab'));
         if (artifactIframe) {
             artifactIframe.style.background = '#ffffff';
@@ -1048,20 +1058,58 @@ document.addEventListener('DOMContentLoaded', () => {
         return normalized;
     }
 
+    function isVizArtifactCode(code) {
+        const source = typeof code === 'string' ? code : '';
+        return VIZ_SIGNALS.some(signal => source.includes(signal));
+    }
+
+    function setArtifactTitle(lang) {
+        const titles = {
+            html: 'HTML Preview',
+            javascript: 'JavaScript',
+            chartjs: 'Chart',
+            chart: 'Chart',
+            svg: 'SVG Preview',
+            jsx: 'JSX Source'
+        };
+        if (artifactTitleEl) {
+            artifactTitleEl.textContent = titles[lang] || 'Artifact';
+        }
+    }
+
     function renderArtifactPreview() {
         if (!artifactIframe) return;
         if (!artifactState.previewSupported) return;
 
         const code = artifactState.code || '';
+        const safeCode = code.replace(/<\/script>/gi, '<\\/script>');
         let srcdoc = '';
 
         if (artifactState.lang === 'html') {
             srcdoc = code;
-        } else if (artifactState.lang === 'javascript') {
-            const safeCode = code.replace(/<\/script>/gi, '<\\/script>');
-            srcdoc = `<!DOCTYPE html><html><body><script>${safeCode}</script></body></html>`;
         } else if (artifactState.lang === 'svg') {
             srcdoc = `<!DOCTYPE html><html><body style="display:flex;align-items:center;justify-content:center;background:#0B0C10;">${code}</body></html>`;
+        } else if (['chartjs', 'chart'].includes(artifactState.lang) || artifactState.isViz) {
+            srcdoc = `<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B0C10; color: #ECEFF4; font-family: ui-sans-serif, sans-serif; padding: 16px; }
+  canvas { max-width: 100%; }
+  .chart-container { position: relative; width: 100%; height: 400px; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"><\/script>
+</head>
+<body>
+<div class="chart-container"><canvas id="myChart"></canvas></div>
+<script>
+${safeCode}
+<\/script>
+</body>
+</html>`;
+        } else if (artifactState.lang === 'javascript') {
+            srcdoc = `<!DOCTYPE html><html><body><script>${safeCode}<\/script></body></html>`;
         }
 
         artifactIframe.srcdoc = srcdoc;
@@ -1069,11 +1117,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openArtifactFromCode(code, lang) {
         if (!artifactPanel) return;
+        const normalizedLang = normalizeArtifactLang(lang);
         artifactState = {
             code: code || '',
-            lang: normalizeArtifactLang(lang),
-            previewSupported: true
+            lang: normalizedLang,
+            previewSupported: true,
+            isViz: ['chartjs', 'chart'].includes(normalizedLang) || (normalizedLang === 'javascript' && isVizArtifactCode(code || ''))
         };
+        setArtifactTitle(artifactState.lang);
 
         if (artifactState.lang === 'jsx') {
             artifactState.previewSupported = false;
@@ -1103,7 +1154,9 @@ document.addEventListener('DOMContentLoaded', () => {
         blocks.forEach(code => {
             if (code.classList.contains('language-mermaid')) return;
             const lang = normalizeArtifactLang(getCodeLanguage(code));
-            if (!['html', 'javascript', 'jsx', 'svg'].includes(lang)) return;
+            const codeText = code.textContent || '';
+            const isVizCode = lang === 'javascript' && isVizArtifactCode(codeText);
+            if (!['html', 'javascript', 'jsx', 'svg', 'chartjs', 'chart'].includes(lang)) return;
             const pre = code.closest('pre');
             if (!pre || pre.dataset.artifactButton === 'true') return;
 
@@ -1112,7 +1165,7 @@ document.addEventListener('DOMContentLoaded', () => {
             button.className = 'artifact-open-btn';
             button.innerHTML = '<i class="ph ph-arrow-square-out"></i> Preview';
             button.addEventListener('click', () => {
-                openArtifactFromCode(code.textContent || '', lang);
+                openArtifactFromCode(codeText, isVizCode ? 'chartjs' : lang);
             });
 
             const row = document.createElement('div');
@@ -1121,6 +1174,33 @@ document.addEventListener('DOMContentLoaded', () => {
             pre.insertAdjacentElement('afterend', row);
             pre.dataset.artifactButton = 'true';
         });
+    }
+
+    function autoOpenVizArtifact(container) {
+        if (!container) return;
+        const blocks = Array.from(container.querySelectorAll('pre > code'));
+        let lastVizCode = null;
+        let lastVizLang = null;
+
+        blocks.forEach(code => {
+            const lang = normalizeArtifactLang(getCodeLanguage(code));
+            const codeText = code.textContent || '';
+
+            if (['chartjs', 'chart', 'html', 'svg'].includes(lang)) {
+                lastVizCode = codeText;
+                lastVizLang = lang;
+                return;
+            }
+
+            if (lang === 'javascript' && isVizArtifactCode(codeText)) {
+                lastVizCode = codeText;
+                lastVizLang = 'chartjs';
+            }
+        });
+
+        if (lastVizCode && lastVizLang) {
+            openArtifactFromCode(lastVizCode, lastVizLang);
+        }
     }
 
     function renderMessageBubble(messageBubble, role, content) {
@@ -1204,7 +1284,7 @@ document.addEventListener('DOMContentLoaded', () => {
             id: 'analyst',
             label: 'Analyst',
             icon: 'ph-chart-line-up',
-            prompt: 'You are a sharp analytical thinker. Structure your responses clearly. Use bullet points, pros/cons lists, and data-driven reasoning. Be objective.'
+            prompt: 'You are a sharp analytical thinker. When showing data or statistics, always generate a Chart.js visualization using a <canvas id="myChart"> inside a ```chartjs code block. Structure your responses clearly. Use bullet points, pros/cons lists, and data-driven reasoning. Be objective.'
         }
     ];
 
@@ -3278,6 +3358,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             attachArtifactButtons(assistantMessage);
+            autoOpenVizArtifact(assistantMessage);
 
             if (!aborted) {
                 generateTitleIfNeeded();
