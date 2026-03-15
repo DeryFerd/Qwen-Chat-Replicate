@@ -1742,6 +1742,58 @@ ul {
     color: var(--text-primary);
 }
 
+.memory-confirm-popover {
+    position: fixed;
+    z-index: 2200;
+    min-width: 180px;
+    max-width: 240px;
+    padding: 12px;
+    border-radius: var(--radius-md);
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    transform: translateY(4px);
+    pointer-events: none;
+    transition: opacity var(--transition), transform var(--transition);
+}
+
+.memory-confirm-popover.show {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.memory-confirm-text {
+    font-size: 13px;
+    color: var(--text-primary);
+    margin-bottom: 10px;
+}
+
+.memory-confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.memory-confirm-actions button {
+    border-radius: var(--radius-sm);
+    padding: 4px 10px;
+    font-size: 12px;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-surface-hover);
+    color: var(--text-secondary);
+}
+
+.memory-confirm-actions button:hover {
+    color: var(--text-primary);
+}
+
+.memory-confirm-actions .memory-confirm-delete {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
 .memory-empty {
     color: var(--text-muted);
     font-size: 14px;

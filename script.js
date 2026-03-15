@@ -103,6 +103,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let memoryCandidates = {};
     let memoryTurnCounter = 0;
     let currentUserProfile = { id: 'default', name: 'User' };
+    let memoryDeletePopover = null;
+    let memoryDeleteTargetId = null;
     const thinkingAnimationState = new WeakMap();
 
     if ('serviceWorker' in navigator) {
@@ -1004,6 +1006,64 @@ document.addEventListener('DOMContentLoaded', () => {
     function closeMemoryModal() {
         if (!memoryModal) return;
         memoryModal.classList.remove('show');
+        closeMemoryDeletePopover();
+    }
+
+    function ensureMemoryDeletePopover() {
+        if (memoryDeletePopover) return memoryDeletePopover;
+        const popover = document.createElement('div');
+        popover.className = 'memory-confirm-popover';
+        popover.innerHTML = `
+            <div class="memory-confirm-text">Delete this memory?</div>
+            <div class="memory-confirm-actions">
+                <button type="button" class="memory-confirm-cancel">Cancel</button>
+                <button type="button" class="memory-confirm-delete">Delete</button>
+            </div>
+        `;
+        document.body.appendChild(popover);
+        popover.querySelector('.memory-confirm-cancel')?.addEventListener('click', () => {
+            closeMemoryDeletePopover();
+        });
+        popover.querySelector('.memory-confirm-delete')?.addEventListener('click', () => {
+            if (!memoryDeleteTargetId) return;
+            userMemories = userMemories.filter(entry => entry.id !== memoryDeleteTargetId);
+            saveMemories();
+            renderMemoryList();
+            closeMemoryDeletePopover();
+        });
+        memoryDeletePopover = popover;
+        return popover;
+    }
+
+    function closeMemoryDeletePopover() {
+        if (!memoryDeletePopover) return;
+        memoryDeletePopover.classList.remove('show');
+        memoryDeletePopover.style.transform = '';
+        memoryDeletePopover.style.left = '';
+        memoryDeletePopover.style.top = '';
+        memoryDeleteTargetId = null;
+    }
+
+    function openMemoryDeletePopover(button) {
+        const popover = ensureMemoryDeletePopover();
+        memoryDeleteTargetId = button.dataset.id || null;
+        popover.classList.add('show');
+        popover.style.left = '0px';
+        popover.style.top = '0px';
+        popover.style.transform = 'translateY(0)';
+        const rect = button.getBoundingClientRect();
+        const popRect = popover.getBoundingClientRect();
+        const padding = 12;
+        const left = Math.min(
+            Math.max(rect.left + rect.width - popRect.width, padding),
+            window.innerWidth - popRect.width - padding
+        );
+        const top = Math.min(
+            rect.bottom + 8,
+            window.innerHeight - popRect.height - padding
+        );
+        popover.style.left = `${left}px`;
+        popover.style.top = `${top}px`;
     }
 
     async function extractMemoryFromLastTurn() {
@@ -2460,6 +2520,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    document.addEventListener('click', (event) => {
+        if (!memoryDeletePopover?.classList.contains('show')) return;
+        const insidePopover = event.target.closest('.memory-confirm-popover');
+        const isRemoveBtn = event.target.closest('.memory-chip button[data-id]');
+        if (!insidePopover && !isRemoveBtn) {
+            closeMemoryDeletePopover();
+        }
+    });
+
     if (memoryInput) {
         memoryInput.addEventListener('input', updateMemoryCounter);
         memoryInput.addEventListener('keydown', (event) => {
@@ -2481,9 +2550,8 @@ document.addEventListener('DOMContentLoaded', () => {
         memoryList.addEventListener('click', (event) => {
             const removeBtn = event.target.closest('button[data-id]');
             if (!removeBtn) return;
-            userMemories = userMemories.filter(entry => entry.id !== removeBtn.dataset.id);
-            saveMemories();
-            renderMemoryList();
+            event.preventDefault();
+            openMemoryDeletePopover(removeBtn);
         });
     }
 
@@ -2495,6 +2563,7 @@ document.addEventListener('DOMContentLoaded', () => {
             saveMemories();
             renderMemoryList();
             updateMemoryCounter();
+            closeMemoryDeletePopover();
         });
     }
 
@@ -2802,6 +2871,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function closeAllOverlays() {
         if (systemPromptModal) systemPromptModal.classList.remove('show');
         if (memoryModal) memoryModal.classList.remove('show');
+        closeMemoryDeletePopover();
         if (shortcutsModal) shortcutsModal.classList.remove('show');
         if (modelSelector) modelSelector.classList.remove('open');
         hideGlobalDropdown();
