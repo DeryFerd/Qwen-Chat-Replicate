@@ -1,3 +1,25 @@
+if (window.mermaid) {
+    mermaid.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        themeVariables: {
+            primaryColor: '#6366f1',
+            primaryTextColor: '#ECEFF4',
+            primaryBorderColor: '#6366f1',
+            lineColor: '#94A3B8',
+            secondaryColor: '#1C1E26',
+            tertiaryColor: '#2A2D39',
+            background: '#0B0C10',
+            mainBkg: '#1C1E26',
+            nodeBorder: '#6366f1',
+            clusterBkg: '#13141B',
+            titleColor: '#ECEFF4',
+            edgeLabelBackground: '#1C1E26',
+            fontFamily: 'ui-monospace, monospace'
+        }
+    });
+}
+
 if (window.marked) {
     marked.setOptions({
         breaks: true,
@@ -47,6 +69,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const welcomeTitle = document.querySelector('.welcome-title');
     const welcomeSubtitle = document.querySelector('.welcome-subtitle');
     const suggestionGrid = document.querySelector('.suggestion-grid');
+    let artifactPanel = document.getElementById('artifact-panel');
+    let artifactIframe = null;
+    let artifactCodeView = null;
+    let artifactRefreshBtn = null;
+    let artifactCopyBtn = null;
+    let artifactCloseBtn = null;
+    let artifactTabs = [];
+    let activeArtifactTab = 'preview';
+    let artifactState = { code: '', lang: '', previewSupported: true };
 
     const CHAT_API_URL = '/api/chat';
 
@@ -128,8 +159,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const code = pre.querySelector('code');
             if (!code) return;
+            if (code.classList.contains('language-mermaid')) return;
 
             pre.classList.add('code-block');
+            pre.style.position = 'relative';
+
+            if (window.hljs) {
+                try {
+                    hljs.highlightElement(code);
+                } catch {
+                    // Ignore highlight errors.
+                }
+            }
+
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'code-copy-btn';
@@ -169,26 +211,329 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function highlightCodeBlocks(container) {
-        if (!window.hljs) return;
-        if (typeof hljs.highlightAll === 'function') {
-            hljs.highlightAll();
-            return;
-        }
-
-        container.querySelectorAll('pre code').forEach(block => {
-            try {
-                hljs.highlightElement(block);
-            } catch {
-                // Ignore highlight errors.
-            }
+    function wrapMathBlocks(container) {
+        container.querySelectorAll('.katex-display').forEach(display => {
+            if (display.parentElement?.classList.contains('math-block')) return;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'math-block';
+            display.parentNode?.insertBefore(wrapper, display);
+            wrapper.appendChild(display);
         });
+    }
+
+    function renderMath(container) {
+        if (!window.renderMathInElement) return;
+        try {
+            renderMathInElement(container, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '$', right: '$', display: false },
+                    { left: '\\[', right: '\\]', display: true },
+                    { left: '\\(', right: '\\)', display: false }
+                ],
+                throwOnError: false,
+                output: 'html'
+            });
+            wrapMathBlocks(container);
+        } catch {
+            // Ignore KaTeX errors.
+        }
+    }
+
+    const mermaidRenderState = new WeakMap();
+
+    async function renderMermaid(container) {
+        if (!window.mermaid) return;
+        try {
+            const messageDiv = container.closest('.message.assistant');
+            const isFinalized = messageDiv?.dataset.finalized === 'true';
+            const state = mermaidRenderState.get(container) || { rendered: false, pending: false, rendering: false };
+
+            if (!isFinalized) {
+                state.pending = true;
+                mermaidRenderState.set(container, state);
+                return;
+            }
+
+            if (state.rendered || state.rendering) return;
+            state.rendering = true;
+            mermaidRenderState.set(container, state);
+
+            const codeBlocks = Array.from(container.querySelectorAll('pre > code.language-mermaid'));
+            if (!codeBlocks.length) {
+                state.rendering = false;
+                mermaidRenderState.set(container, state);
+                return;
+            }
+
+            for (let i = 0; i < codeBlocks.length; i += 1) {
+                const code = codeBlocks[i];
+                const pre = code.closest('pre');
+                if (!pre) continue;
+                const diagramText = code.textContent || '';
+                const wrapper = document.createElement('div');
+                wrapper.className = 'mermaid-wrapper';
+                const diagram = document.createElement('div');
+                diagram.className = 'mermaid-diagram';
+                const renderId = `mermaid-${Date.now()}-${i}-${Math.random().toString(16).slice(2, 6)}`;
+                diagram.id = renderId;
+
+                const copyBtn = document.createElement('button');
+                copyBtn.type = 'button';
+                copyBtn.className = 'code-copy-btn mermaid-copy-btn';
+                copyBtn.textContent = 'Copy source';
+                copyBtn.addEventListener('click', async (event) => {
+                    event.preventDefault();
+                    try {
+                        if (navigator.clipboard?.writeText) {
+                            await navigator.clipboard.writeText(diagramText);
+                        } else {
+                            const textarea = document.createElement('textarea');
+                            textarea.value = diagramText;
+                            textarea.style.position = 'fixed';
+                            textarea.style.opacity = '0';
+                            document.body.appendChild(textarea);
+                            textarea.focus();
+                            textarea.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(textarea);
+                        }
+                        copyBtn.textContent = 'Copied';
+                        setTimeout(() => {
+                            copyBtn.textContent = 'Copy source';
+                        }, 1200);
+                    } catch {
+                        copyBtn.textContent = 'Failed';
+                        setTimeout(() => {
+                            copyBtn.textContent = 'Copy source';
+                        }, 1200);
+                    }
+                });
+
+                wrapper.appendChild(copyBtn);
+                wrapper.appendChild(diagram);
+
+                try {
+                    const result = await mermaid.render(renderId, diagramText);
+                    diagram.innerHTML = result?.svg || '';
+                    pre.replaceWith(wrapper);
+                } catch {
+                    const errorLabel = document.createElement('div');
+                    errorLabel.className = 'mermaid-error';
+                    errorLabel.textContent = 'Diagram render failed';
+                    pre.insertAdjacentElement('beforebegin', errorLabel);
+                }
+            }
+
+            state.rendered = true;
+            state.pending = false;
+            state.rendering = false;
+            mermaidRenderState.set(container, state);
+        } catch {
+            // Ignore mermaid errors.
+        }
     }
 
     function enhanceMarkdown(container) {
         ensureLinkTargets(container);
-        highlightCodeBlocks(container);
         ensureCopyButtons(container);
+        renderMermaid(container);
+        renderMath(container);
+    }
+
+    function initArtifactPanel() {
+        if (!artifactPanel) {
+            artifactPanel = document.createElement('div');
+            artifactPanel.id = 'artifact-panel';
+            artifactPanel.className = 'artifact-panel';
+            artifactPanel.hidden = true;
+            artifactPanel.innerHTML = `
+                <div class="artifact-header">
+                    <span class="artifact-title">Artifact</span>
+                    <div class="artifact-header-actions">
+                        <button id="artifact-refresh-btn" title="Refresh"><i class="ph ph-arrow-clockwise"></i></button>
+                        <button id="artifact-copy-btn" title="Copy code"><i class="ph ph-copy"></i></button>
+                        <button id="artifact-close-btn" title="Close"><i class="ph ph-x"></i></button>
+                    </div>
+                </div>
+                <div class="artifact-tabs">
+                    <button class="artifact-tab is-active" data-tab="preview">Preview</button>
+                    <button class="artifact-tab" data-tab="code">Code</button>
+                </div>
+                <div class="artifact-body">
+                    <iframe id="artifact-iframe" class="artifact-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
+                    <pre id="artifact-code-view" class="artifact-code-view" hidden></pre>
+                </div>
+            `;
+            document.body.appendChild(artifactPanel);
+        }
+
+        artifactIframe = artifactPanel.querySelector('#artifact-iframe');
+        artifactCodeView = artifactPanel.querySelector('#artifact-code-view');
+        artifactRefreshBtn = artifactPanel.querySelector('#artifact-refresh-btn');
+        artifactCopyBtn = artifactPanel.querySelector('#artifact-copy-btn');
+        artifactCloseBtn = artifactPanel.querySelector('#artifact-close-btn');
+        artifactTabs = Array.from(artifactPanel.querySelectorAll('.artifact-tab'));
+        if (artifactIframe) {
+            artifactIframe.style.background = '#ffffff';
+        }
+
+        artifactTabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.dataset.tab;
+                if (tabName === 'preview' && !artifactState.previewSupported) {
+                    setArtifactTab('code');
+                    return;
+                }
+                setArtifactTab(tabName);
+            });
+        });
+
+        artifactRefreshBtn?.addEventListener('click', () => {
+            renderArtifactPreview();
+        });
+
+        artifactCopyBtn?.addEventListener('click', async () => {
+            const code = artifactState.code || '';
+            if (!code) return;
+            try {
+                if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(code);
+                } else {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = code;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.focus();
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }
+            } catch {
+                // Ignore copy failures.
+            }
+        });
+
+        artifactCloseBtn?.addEventListener('click', () => {
+            closeArtifactPanel();
+        });
+    }
+
+    function setArtifactTab(tab) {
+        activeArtifactTab = tab;
+        artifactTabs.forEach(button => {
+            button.classList.toggle('is-active', button.dataset.tab === tab);
+        });
+
+        if (tab === 'preview' && artifactState.previewSupported) {
+            artifactIframe.hidden = false;
+            artifactCodeView.hidden = true;
+            renderArtifactPreview();
+        } else {
+            artifactIframe.hidden = true;
+            artifactCodeView.hidden = false;
+        }
+    }
+
+    function openArtifactPanel() {
+        if (!artifactPanel) return;
+        artifactPanel.hidden = false;
+        requestAnimationFrame(() => {
+            artifactPanel.classList.add('is-open');
+        });
+        document.body.classList.add('artifact-open');
+    }
+
+    function closeArtifactPanel() {
+        if (!artifactPanel) return;
+        artifactPanel.classList.remove('is-open');
+        setTimeout(() => {
+            artifactPanel.hidden = true;
+        }, 220);
+        document.body.classList.remove('artifact-open');
+    }
+
+    function normalizeArtifactLang(lang) {
+        if (!lang) return '';
+        const normalized = lang.toLowerCase();
+        if (normalized === 'js') return 'javascript';
+        return normalized;
+    }
+
+    function renderArtifactPreview() {
+        if (!artifactIframe) return;
+        if (!artifactState.previewSupported) return;
+
+        const code = artifactState.code || '';
+        let srcdoc = '';
+
+        if (artifactState.lang === 'html') {
+            srcdoc = code;
+        } else if (artifactState.lang === 'javascript') {
+            const safeCode = code.replace(/<\/script>/gi, '<\\/script>');
+            srcdoc = `<!DOCTYPE html><html><body><script>${safeCode}</script></body></html>`;
+        } else if (artifactState.lang === 'svg') {
+            srcdoc = `<!DOCTYPE html><html><body style="display:flex;align-items:center;justify-content:center;background:#0B0C10;">${code}</body></html>`;
+        }
+
+        artifactIframe.srcdoc = srcdoc;
+    }
+
+    function openArtifactFromCode(code, lang) {
+        if (!artifactPanel) return;
+        artifactState = {
+            code: code || '',
+            lang: normalizeArtifactLang(lang),
+            previewSupported: true
+        };
+
+        if (artifactState.lang === 'jsx') {
+            artifactState.previewSupported = false;
+            const message = 'JSX preview requires a build step. Showing source only.';
+            artifactCodeView.textContent = `${message}\n\n${artifactState.code}`;
+            setArtifactTab('code');
+            artifactIframe.srcdoc = '';
+        } else {
+            artifactState.previewSupported = true;
+            artifactCodeView.textContent = artifactState.code;
+            setArtifactTab('preview');
+            renderArtifactPreview();
+        }
+
+        openArtifactPanel();
+    }
+
+    function getCodeLanguage(code) {
+        const className = code.className || '';
+        const match = className.match(/language-([a-z0-9]+)/i);
+        return match ? match[1].toLowerCase() : '';
+    }
+
+    function attachArtifactButtons(container) {
+        if (!container) return;
+        const blocks = Array.from(container.querySelectorAll('pre > code'));
+        blocks.forEach(code => {
+            if (code.classList.contains('language-mermaid')) return;
+            const lang = normalizeArtifactLang(getCodeLanguage(code));
+            if (!['html', 'javascript', 'jsx', 'svg'].includes(lang)) return;
+            const pre = code.closest('pre');
+            if (!pre || pre.dataset.artifactButton === 'true') return;
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'artifact-open-btn';
+            button.innerHTML = '<i class="ph ph-arrow-square-out"></i> Preview';
+            button.addEventListener('click', () => {
+                openArtifactFromCode(code.textContent || '', lang);
+            });
+
+            const row = document.createElement('div');
+            row.className = 'artifact-open-row';
+            row.appendChild(button);
+            pre.insertAdjacentElement('afterend', row);
+            pre.dataset.artifactButton = 'true';
+        });
     }
 
     function renderMessageBubble(messageBubble, role, content) {
@@ -1055,6 +1400,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateModelDependentToggles();
     updateWebSearchToggleUI();
+    initArtifactPanel();
 
     // Elements
     const sidebarContent = document.querySelector('.sidebar-content');
@@ -2236,7 +2582,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const assistantMessage = appendMessageDOM('assistant', '', {
             modelMeta: selectedModelMeta,
             pendingThinking: enableThinking,
-            forceThinking: enableThinking
+            forceThinking: enableThinking,
+            finalized: false
         });
         assistantMessage.dataset.webSearchUsed = 'false';
         updateToolActivity(assistantMessage, '');
@@ -2254,7 +2601,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 content: fullReply,
                 thinking: enableThinking ? fullThinking : '',
                 pendingThinking: false,
-                forceThinking: enableThinking
+                forceThinking: enableThinking,
+                finalized: true
             });
 
             if (pendingToolMessages.length) {
@@ -2274,6 +2622,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 updateToolActivity(assistantMessage, '');
             }
+
+            attachArtifactButtons(assistantMessage);
 
             if (!aborted) {
                 generateTitleIfNeeded();
@@ -2372,7 +2722,8 @@ document.addEventListener('DOMContentLoaded', () => {
                             content: fullReply,
                             thinking: enableThinking ? fullThinking : '',
                             pendingThinking: enableThinking,
-                            forceThinking: enableThinking
+                            forceThinking: enableThinking,
+                            finalized: false
                         });
                     } catch {
                         // Ignore keep-alive or incomplete lines.
@@ -2445,6 +2796,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (modelSelector) modelSelector.classList.remove('open');
         hideGlobalDropdown();
         closeTagEditor();
+        closeArtifactPanel();
         const deleteModal = document.getElementById('delete-modal');
         if (deleteModal) deleteModal.classList.remove('show');
     }
@@ -2729,6 +3081,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const thinkingState = getThinkingState(messageDiv);
         const previousTarget = thinkingState.targetText || '';
 
+        if (messageDiv) {
+            messageDiv.dataset.pendingThinking = isPending ? 'true' : 'false';
+            if (typeof state.finalized === 'boolean') {
+                messageDiv.dataset.finalized = state.finalized ? 'true' : 'false';
+            }
+        }
+
         if (messageBubble) {
             renderMessageBubble(messageBubble, 'assistant', state.content || '');
         }
@@ -2837,11 +3196,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 content,
                 thinking: messageData.thinking || '',
                 pendingThinking: Boolean(messageData.pendingThinking),
-                forceThinking: Boolean(messageData.forceThinking)
+                forceThinking: Boolean(messageData.forceThinking),
+                finalized: messageData.finalized ?? true
             });
 
             if (typeof messageData.messageIndex === 'number') {
                 renderSourcesForAssistant(messageDiv, messageData.messageIndex);
+            }
+
+            if (!messageData.pendingThinking) {
+                attachArtifactButtons(messageDiv);
             }
         } else {
             messageDiv.innerHTML = `
