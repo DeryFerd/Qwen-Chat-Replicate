@@ -259,6 +259,9 @@ async function* createChatStream(payload, env, options = {}) {
     }
 
     const toolMessages = await executeToolCalls(streamState.toolCalls, env.TAVILY_API_KEY);
+    for (const toolMessage of toolMessages) {
+      yield `${JSON.stringify({ message: toolMessage })}\n`;
+    }
     messages = [...messages, ...toolMessages];
   }
 

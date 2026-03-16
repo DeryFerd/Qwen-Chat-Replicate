@@ -3824,10 +3824,14 @@ ${safeCode}
                             const completedText = doneQuery
                                 ? `Searched the web for "${doneQuery}"`
                                 : 'Web search complete';
+                            const sourceResults = parseToolResults(lastSearch);
                             assistantMessage.dataset.webSearchUsed = 'true';
                             assistantMessage.dataset.webSearchLastText = completedText;
                             assistantMessage.dataset.webSearchCount = String(webSearchCount);
-                            updateToolActivity(assistantMessage, completedText, webSearchCount, { interactive: true });
+                            updateToolActivity(assistantMessage, completedText, webSearchCount, {
+                                interactive: true,
+                                sources: sourceResults
+                            });
                         }
 
                         updateAssistantMessageState(assistantMessage, {
@@ -4350,4 +4354,5 @@ ${safeCode}
         return messageDiv;
     }
 });
+
 
