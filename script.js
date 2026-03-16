@@ -2152,7 +2152,7 @@ ${safeCode}
             const favicon = document.createElement('img');
             favicon.className = 'source-favicon';
             favicon.alt = '';
-            favicon.src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=16`;
+            favicon.src = "https://www.google.com/s2/favicons?domain=" + encodeURIComponent(domain) + "&sz=16";
 
             const titleEl = document.createElement('div');
             titleEl.className = 'source-title';
@@ -2168,7 +2168,15 @@ ${safeCode}
             row.appendChild(card);
         });
 
-        messageContent.appendChild(row);
+        const activity = messageContent.querySelector('.tool-activity');
+        if (activity) {
+            activity.appendChild(row);
+        } else {
+            messageContent.appendChild(row);
+        }
+        if (expanded) {
+            row.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        }
         return true;
     }
 
@@ -2176,9 +2184,7 @@ ${safeCode}
         if (!messageDiv) return false;
         const results = collectWebSearchResultsBefore(currentMessages, assistantIndex);
         if (!results.length) return false;
-        const activity = messageDiv.querySelector('.tool-activity');
-        const expanded = activity?.dataset.expanded === 'true';
-        return renderSourcesRow(messageDiv, results, expanded);
+        return renderSourcesRow(messageDiv, results, true);
     }
 
     function focusToolSources(messageDiv) {
@@ -2251,6 +2257,7 @@ ${safeCode}
         const activity = messageDiv.querySelector('.tool-activity');
         if (!activity) return;
         const sourceResults = dedupeWebSearchResults(options?.sources || []);
+        const hasSources = sourceResults.length > 0;
         const isInteractive = Boolean(options?.interactive);
 
         if (text) {
@@ -2258,15 +2265,11 @@ ${safeCode}
             activity.classList.toggle('is-interactive', isInteractive);
             activity.classList.toggle('is-open', false);
             activity.dataset.expanded = 'false';
-            const existingRow = messageDiv.querySelector('.sources-row');
-            if (existingRow) {
-                existingRow.hidden = true;
-            }
             activity.innerHTML = '';
 
-            if (sourceResults.length) {
+
+            if (hasSources) {
                 messageDiv.dataset.webSearchSources = JSON.stringify(sourceResults);
-                renderSourcesRow(messageDiv, sourceResults, false);
             }
 
             const trigger = document.createElement(isInteractive ? 'button' : 'div');
@@ -2302,42 +2305,21 @@ ${safeCode}
                 const arrow = document.createElement('i');
                 arrow.className = 'ph ph-caret-right tool-activity-arrow';
                 trigger.appendChild(arrow);
-
-                if (!activity.dataset.expanded) {
-                    activity.dataset.expanded = 'false';
-                }
-
-                trigger.addEventListener('click', () => {
-                    const expanded = activity.dataset.expanded === 'true';
-                    const nextExpanded = !expanded;
-                    activity.dataset.expanded = String(nextExpanded);
-                    activity.classList.toggle('is-open', nextExpanded);
-                    let row = messageDiv.querySelector('.sources-row');
-                    if (!row) {
-                        const stored = messageDiv.dataset.webSearchSources;
-                        if (stored) {
-                            try {
-                                const parsed = JSON.parse(stored);
-                                renderSourcesRow(messageDiv, parsed, nextExpanded);
-                                row = messageDiv.querySelector('.sources-row');
-                            } catch {
-                                row = null;
-                            }
-                        }
-                    }
-                    if (row) {
-                        row.hidden = !nextExpanded;
-                    }
-                });
             }
 
             activity.appendChild(trigger);
+
+            if (hasSources) {
+                renderSourcesRow(messageDiv, sourceResults, true);
+            }
         } else {
             activity.hidden = true;
             activity.classList.remove('is-interactive');
             activity.classList.remove('is-open');
             delete activity.dataset.expanded;
             activity.innerHTML = '';
+            const existingRow = messageDiv.querySelector('.sources-row');
+            if (existingRow) existingRow.remove();
         }
     }
 
@@ -3818,6 +3800,15 @@ ${safeCode}
                                 interactive: true,
                                 sources: sourceResults
                             });
+                            if (sourceResults.length) {
+                                assistantMessage.dataset.webSearchSources = JSON.stringify(sourceResults);
+                                renderSourcesRow(assistantMessage, sourceResults, true);
+                                const activity = assistantMessage.querySelector('.tool-activity');
+                                if (activity) {
+                                    activity.dataset.expanded = 'true';
+                                    activity.classList.add('is-open');
+                                }
+                            }
                         }
 
                         updateAssistantMessageState(assistantMessage, {
@@ -4340,6 +4331,7 @@ ${safeCode}
         return messageDiv;
     }
 });
+
 
 
 
