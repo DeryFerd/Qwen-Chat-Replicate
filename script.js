@@ -2059,6 +2059,16 @@ ${safeCode}
         }
     }
 
+    function parseWebSearchQuery(toolMessage) {
+        if (!toolMessage?.content) return '';
+        try {
+            const parsed = JSON.parse(toolMessage.content);
+            return typeof parsed?.query === 'string' ? parsed.query : '';
+        } catch {
+            return '';
+        }
+    }
+
     function collectWebSearchResultsBefore(messages, assistantIndex) {
         const results = [];
         if (!Array.isArray(messages)) return results;
@@ -2089,6 +2099,18 @@ ${safeCode}
         }
 
         return matches.reverse();
+    }
+
+    function getWebSearchActivitySummary(messages, assistantIndex) {
+        const toolMessages = collectWebSearchToolMessagesBefore(messages, assistantIndex);
+        const count = toolMessages.length;
+        const latestTool = count ? toolMessages[count - 1] : null;
+        const query = parseWebSearchQuery(latestTool);
+        const text = query
+            ? `Searched the web for "${query}"`
+            : (count ? 'Web search used' : '');
+
+        return { count, query, text };
     }
 
     function renderSourcesForAssistant(messageDiv, assistantIndex) {
@@ -2162,30 +2184,33 @@ ${safeCode}
 
     function syncWebSearchActivity(messageDiv, assistantIndex, fallbackText = '', fallbackCount = 0) {
         if (!messageDiv) return false;
+        const summary = typeof assistantIndex === 'number'
+            ? getWebSearchActivitySummary(currentMessages, assistantIndex)
+            : { count: 0, query: '', text: '' };
+        const datasetCount = Number.parseInt(messageDiv.dataset.webSearchCount || '0', 10) || 0;
+        const resolvedCount = fallbackCount || summary.count || datasetCount;
+        const resolvedText = summary.text
+            || fallbackText
+            || messageDiv.dataset.webSearchLastText
+            || (resolvedCount ? 'Web search used' : '');
 
         const hasSources = typeof assistantIndex === 'number'
             ? renderSourcesForAssistant(messageDiv, assistantIndex)
             : Boolean(messageDiv.querySelector('.sources-row'));
 
         if (hasSources) {
-            const searchMessages = typeof assistantIndex === 'number'
-                ? collectWebSearchToolMessagesBefore(currentMessages, assistantIndex)
-                : [];
-            const count = fallbackCount
-                || searchMessages.length
-                || (Number.parseInt(messageDiv.dataset.webSearchCount || '0', 10) || 0);
-
             messageDiv.dataset.webSearchUsed = 'true';
-            messageDiv.dataset.webSearchCount = String(count);
-            messageDiv.dataset.webSearchLastText = 'View web sources';
-            updateToolActivity(messageDiv, 'View web sources', count, { interactive: true });
+            messageDiv.dataset.webSearchCount = String(resolvedCount);
+            messageDiv.dataset.webSearchLastText = resolvedText;
+            updateToolActivity(messageDiv, resolvedText, resolvedCount, { interactive: true });
             return true;
         }
 
-        if (messageDiv.dataset.webSearchUsed === 'true') {
-            const lastText = fallbackText || messageDiv.dataset.webSearchLastText || 'Web search used';
-            const lastCount = fallbackCount || (Number.parseInt(messageDiv.dataset.webSearchCount || '0', 10) || 0);
-            updateToolActivity(messageDiv, lastText, lastCount);
+        if (messageDiv.dataset.webSearchUsed === 'true' || resolvedCount > 0 || resolvedText) {
+            messageDiv.dataset.webSearchUsed = 'true';
+            messageDiv.dataset.webSearchCount = String(resolvedCount);
+            messageDiv.dataset.webSearchLastText = resolvedText;
+            updateToolActivity(messageDiv, resolvedText, resolvedCount, { interactive: true });
             return false;
         }
 
@@ -3688,7 +3713,7 @@ ${safeCode}
                                     ? `Searching the web for "${query}"...`
                                     : 'Searching the web...';
                                 assistantMessage.dataset.webSearchLastText = searchText;
-                                updateToolActivity(assistantMessage, searchText, webSearchCount);
+                                updateToolActivity(assistantMessage, searchText, webSearchCount, { interactive: true });
                             }
                         }
 
@@ -3710,7 +3735,7 @@ ${safeCode}
                             assistantMessage.dataset.webSearchUsed = 'true';
                             assistantMessage.dataset.webSearchLastText = completedText;
                             assistantMessage.dataset.webSearchCount = String(webSearchCount);
-                            updateToolActivity(assistantMessage, completedText, webSearchCount);
+                            updateToolActivity(assistantMessage, completedText, webSearchCount, { interactive: true });
                         }
 
                         updateAssistantMessageState(assistantMessage, {

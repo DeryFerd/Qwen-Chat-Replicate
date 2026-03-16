@@ -1414,6 +1414,8 @@ ul {
     background: transparent;
     border: 0;
     text-align: left;
+    font: inherit;
+    cursor: pointer;
 }
 
 .tool-activity-main {
