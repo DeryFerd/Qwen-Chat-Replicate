@@ -141,9 +141,9 @@
                 </div>
                 <span class="system-prompt-indicator" id="system-prompt-indicator" title="Custom system prompt active" hidden></span>
                 <div class="header-actions">
-                    <button class="header-user-btn" id="header-user-btn" title="User menu">
-                        <span class="header-user-avatar" id="header-user-avatar">U</span>
-                        <i class="ph ph-caret-down"></i>
+                    <button class="header-share-btn" id="header-share-btn" title="Share chat">
+                        <i class="ph ph-share-network"></i>
+                        <span>Share</span>
                     </button>
                 </div>
             </header>
@@ -344,6 +344,20 @@
                         <button type="button" class="settings-toggle-btn" id="settings-websearch-toggle" aria-pressed="false"></button>
                     </div>
                 </div>
+            </div>
+        </div>
+        <div class="modal-overlay" id="share-modal">
+            <div class="modal-content share-modal">
+                <button class="modal-close-btn" id="share-close-btn" title="Close">
+                    <i class="ph ph-x"></i>
+                </button>
+                <h3>Share Chat</h3>
+                <p>Copy a link or the transcript to share this conversation.</p>
+                <div class="share-row">
+                    <input type="text" id="share-link-input" readonly>
+                    <button class="modal-primary-btn" id="share-copy-link-btn">Copy link</button>
+                </div>
+                <button class="modal-cancel-btn share-copy-text-btn" id="share-copy-text-btn">Copy transcript</button>
             </div>
         </div>
 

@@ -731,33 +731,20 @@ ul {
     gap: 8px;
 }
 
-.header-user-btn {
+.header-share-btn {
     display: inline-flex;
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
-    border-radius: 999px;
+    border-radius: var(--radius-md);
     background-color: var(--bg-surface);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
     font-size: 14px;
 }
 
-.header-user-btn:hover {
+.header-share-btn:hover {
     background-color: var(--bg-surface-hover);
-}
-
-.header-user-avatar {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background-color: var(--accent);
-    color: white;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    font-size: 14px;
 }
 
 /* Chat Area */
@@ -2031,6 +2018,31 @@ ul {
     background-color: var(--accent);
 }
 
+.share-modal {
+    max-width: 520px;
+}
+
+.share-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.share-row input {
+    flex: 1;
+    padding: 8px 10px;
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.share-copy-text-btn {
+    width: 100%;
+}
+
 .modal-actions {
     display: flex;
     justify-content: flex-end;
@@ -2122,6 +2134,21 @@ ul {
 
 .modal-delete-btn:hover {
     background-color: #dc2626;
+}
+
+.modal-primary-btn {
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background-color: var(--accent);
+    color: white;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color var(--transition);
+}
+
+.modal-primary-btn:hover {
+    background-color: var(--accent-hover);
 }
 
 .modal-close-btn {

@@ -73,8 +73,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const userProfileBtn = document.querySelector('.user-profile-btn');
     const userNameLabel = document.querySelector('.username');
     const userAvatar = document.querySelector('.avatar');
-    const headerUserBtn = document.getElementById('header-user-btn');
-    const headerUserAvatar = document.getElementById('header-user-avatar');
+    const headerShareBtn = document.getElementById('header-share-btn');
     const userMenuDropdown = document.getElementById('user-menu-dropdown');
     const userMenuLanguageLabel = document.getElementById('user-menu-language-label');
     const settingsModal = document.getElementById('settings-modal');
@@ -83,6 +82,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const settingsLanguageSelect = document.getElementById('settings-language');
     const settingsThinkingToggleBtn = document.getElementById('settings-thinking-toggle');
     const settingsWebSearchToggleBtn = document.getElementById('settings-websearch-toggle');
+    const shareModal = document.getElementById('share-modal');
+    const shareCloseBtn = document.getElementById('share-close-btn');
+    const shareLinkInput = document.getElementById('share-link-input');
+    const shareCopyLinkBtn = document.getElementById('share-copy-link-btn');
+    const shareCopyTextBtn = document.getElementById('share-copy-text-btn');
     const brandLogo = document.querySelector('.brand-logo');
     const brandName = document.querySelector('.brand-name');
     const welcomeLogo = document.querySelector('.welcome-logo');
@@ -1538,10 +1542,6 @@ ${safeCode}
             const name = currentUserProfile?.name || 'U';
             userAvatar.textContent = name.trim().charAt(0).toUpperCase() || 'U';
         }
-        if (headerUserAvatar) {
-            const name = currentUserProfile?.name || 'U';
-            headerUserAvatar.textContent = name.trim().charAt(0).toUpperCase() || 'U';
-        }
     }
 
     function loadLanguagePreference() {
@@ -1641,6 +1641,47 @@ ${safeCode}
     function closeSettingsModal() {
         if (!settingsModal) return;
         settingsModal.classList.remove('show');
+    }
+
+    function buildTranscriptText() {
+        const chat = currentChatId ? chats.find(c => c.id === currentChatId) : null;
+        const title = chat?.title || 'Untitled chat';
+        const updatedAt = chat?.updatedAt || new Date().toISOString();
+        const sourceMessages = chat?.messages || currentMessages;
+        let content = `Chat: ${title}\nDate: ${updatedAt}\n\n`;
+        sourceMessages.forEach(msg => {
+            if (msg.role === 'tool') return;
+            content += `[${String(msg.role || '').toUpperCase()}]:\n${msg.content}\n\n`;
+        });
+        return content.trim();
+    }
+
+    async function copyToClipboard(text) {
+        if (!text) return false;
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    function updateShareLink() {
+        if (!shareLinkInput) return;
+        shareLinkInput.value = window.location.href;
+    }
+
+    function openShareModal() {
+        if (!shareModal) return;
+        closeUserMenu();
+        updateShareLink();
+        shareModal.classList.add('show');
+        shareLinkInput?.select();
+    }
+
+    function closeShareModal() {
+        if (!shareModal) return;
+        shareModal.classList.remove('show');
     }
 
     function positionUserMenu(anchor) {
@@ -3726,10 +3767,10 @@ ${safeCode}
         });
     }
 
-    if (headerUserBtn) {
-        headerUserBtn.addEventListener('click', (event) => {
+    if (headerShareBtn) {
+        headerShareBtn.addEventListener('click', (event) => {
             event.stopPropagation();
-            toggleUserMenu(headerUserBtn);
+            openShareModal();
         });
     }
 
@@ -3799,6 +3840,44 @@ ${safeCode}
             webSearchEnabled = !webSearchEnabled;
             updateWebSearchToggleUI();
             updateSettingsToggleUI();
+        });
+    }
+
+    if (shareCloseBtn) {
+        shareCloseBtn.addEventListener('click', closeShareModal);
+    }
+
+    if (shareModal) {
+        shareModal.addEventListener('click', (event) => {
+            if (event.target === shareModal) {
+                closeShareModal();
+            }
+        });
+    }
+
+    if (shareCopyLinkBtn) {
+        shareCopyLinkBtn.addEventListener('click', async () => {
+            updateShareLink();
+            const didCopy = await copyToClipboard(shareLinkInput?.value || '');
+            if (didCopy) {
+                shareCopyLinkBtn.textContent = 'Copied';
+                setTimeout(() => {
+                    shareCopyLinkBtn.textContent = 'Copy link';
+                }, 1200);
+            }
+        });
+    }
+
+    if (shareCopyTextBtn) {
+        shareCopyTextBtn.addEventListener('click', async () => {
+            const transcript = buildTranscriptText();
+            const didCopy = await copyToClipboard(transcript);
+            if (didCopy) {
+                shareCopyTextBtn.textContent = 'Copied';
+                setTimeout(() => {
+                    shareCopyTextBtn.textContent = 'Copy transcript';
+                }, 1200);
+            }
         });
     }
 
@@ -4171,6 +4250,7 @@ ${safeCode}
         closeMemoryDeletePopover();
         if (shortcutsModal) shortcutsModal.classList.remove('show');
         closeSettingsModal();
+        closeShareModal();
         closeUserMenu();
         if (modelSelector) modelSelector.classList.remove('open');
         hideGlobalDropdown();
