@@ -140,6 +140,12 @@
                     </div>
                 </div>
                 <span class="system-prompt-indicator" id="system-prompt-indicator" title="Custom system prompt active" hidden></span>
+                <div class="header-actions">
+                    <button class="header-user-btn" id="header-user-btn" title="User menu">
+                        <span class="header-user-avatar" id="header-user-avatar">U</span>
+                        <i class="ph ph-caret-down"></i>
+                    </button>
+                </div>
             </header>
 
             <!-- Chat Area -->
@@ -276,6 +282,67 @@
                 <div class="memory-footer">
                     <button class="modal-cancel-btn" id="memory-clear-btn">Clear all</button>
                     <span class="memory-counter" id="memory-counter">0 / 120</span>
+                </div>
+            </div>
+        </div>
+        <div class="user-menu-dropdown" id="user-menu-dropdown" role="menu">
+            <button class="user-menu-item" type="button" data-action="settings">
+                <i class="ph ph-gear"></i>
+                <span>Settings</span>
+            </button>
+            <button class="user-menu-item" type="button" data-action="language">
+                <i class="ph ph-translate"></i>
+                <span id="user-menu-language-label">Language: Auto</span>
+            </button>
+            <div class="user-menu-divider"></div>
+            <button class="user-menu-item" type="button" data-action="system-prompt">
+                <i class="ph ph-sliders"></i>
+                <span>System prompt</span>
+            </button>
+            <button class="user-menu-item" type="button" data-action="memory">
+                <i class="ph ph-brain"></i>
+                <span>Memory</span>
+            </button>
+            <button class="user-menu-item" type="button" data-action="shortcuts">
+                <i class="ph ph-command"></i>
+                <span>Keyboard shortcuts</span>
+            </button>
+        </div>
+        <div class="modal-overlay" id="settings-modal">
+            <div class="modal-content settings-modal">
+                <button class="modal-close-btn" id="settings-close-btn" title="Close">
+                    <i class="ph ph-x"></i>
+                </button>
+                <h3>Settings</h3>
+                <div class="settings-section">
+                    <h4>Profile</h4>
+                    <div class="settings-row">
+                        <label for="settings-name">Name</label>
+                        <input type="text" id="settings-name" maxlength="40" placeholder="Your name">
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h4>Language</h4>
+                    <div class="settings-row">
+                        <label for="settings-language">Response language</label>
+                        <select id="settings-language">
+                            <option value="auto">Auto</option>
+                            <option value="id">Bahasa Indonesia</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+                    <p class="settings-hint">This preference adds a system instruction for responses.</p>
+                </div>
+                <div class="settings-section">
+                    <h4>Tools</h4>
+                    <div class="settings-toggle-row">
+                        <span>Thinking</span>
+                        <button type="button" class="settings-toggle-btn" id="settings-thinking-toggle" aria-pressed="false"></button>
+                    </div>
+                    <div class="settings-toggle-row">
+                        <span>Web search</span>
+                        <button type="button" class="settings-toggle-btn" id="settings-websearch-toggle" aria-pressed="false"></button>
+                    </div>
                 </div>
             </div>
         </div>

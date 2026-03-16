@@ -73,6 +73,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const userProfileBtn = document.querySelector('.user-profile-btn');
     const userNameLabel = document.querySelector('.username');
     const userAvatar = document.querySelector('.avatar');
+    const headerUserBtn = document.getElementById('header-user-btn');
+    const headerUserAvatar = document.getElementById('header-user-avatar');
+    const userMenuDropdown = document.getElementById('user-menu-dropdown');
+    const userMenuLanguageLabel = document.getElementById('user-menu-language-label');
+    const settingsModal = document.getElementById('settings-modal');
+    const settingsCloseBtn = document.getElementById('settings-close-btn');
+    const settingsNameInput = document.getElementById('settings-name');
+    const settingsLanguageSelect = document.getElementById('settings-language');
+    const settingsThinkingToggleBtn = document.getElementById('settings-thinking-toggle');
+    const settingsWebSearchToggleBtn = document.getElementById('settings-websearch-toggle');
     const brandLogo = document.querySelector('.brand-logo');
     const brandName = document.querySelector('.brand-name');
     const welcomeLogo = document.querySelector('.welcome-logo');
@@ -113,6 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let thinkingEnabled = false;
     let webSearchEnabled = true;
     let currentSystemPrompt = localStorage.getItem('qwen_system_prompt') || '';
+    let preferredLanguage = loadLanguagePreference();
     let deferredInstallPrompt = null;
     let sidebarSearchQuery = '';
     let sidebarSearchDebounce = null;
@@ -125,6 +136,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentUserProfile = { id: 'default', name: 'User' };
     let memoryDeletePopover = null;
     let memoryDeleteTargetId = null;
+    let activeUserMenuAnchor = null;
     const thinkingAnimationState = new WeakMap();
 
     if ('serviceWorker' in navigator) {
@@ -1526,6 +1538,149 @@ ${safeCode}
             const name = currentUserProfile?.name || 'U';
             userAvatar.textContent = name.trim().charAt(0).toUpperCase() || 'U';
         }
+        if (headerUserAvatar) {
+            const name = currentUserProfile?.name || 'U';
+            headerUserAvatar.textContent = name.trim().charAt(0).toUpperCase() || 'U';
+        }
+    }
+
+    function loadLanguagePreference() {
+        const stored = localStorage.getItem('qwen_language_pref');
+        if (stored === 'id' || stored === 'en' || stored === 'auto') {
+            return stored;
+        }
+        return 'auto';
+    }
+
+    function saveLanguagePreference(value) {
+        if (!value || value === 'auto') {
+            preferredLanguage = 'auto';
+            localStorage.removeItem('qwen_language_pref');
+            return;
+        }
+        preferredLanguage = value;
+        localStorage.setItem('qwen_language_pref', value);
+    }
+
+    function getLanguageLabel(value) {
+        if (value === 'id') return 'Bahasa Indonesia';
+        if (value === 'en') return 'English';
+        return 'Auto';
+    }
+
+    function getLanguageInstruction() {
+        if (preferredLanguage === 'id') return 'Respond in Bahasa Indonesia.';
+        if (preferredLanguage === 'en') return 'Respond in English.';
+        return '';
+    }
+
+    function applyLanguagePreference() {
+        if (!document?.documentElement) return;
+        const lang = preferredLanguage === 'id' ? 'id' : 'en';
+        document.documentElement.lang = lang;
+    }
+
+    function updateLanguageMenuLabel() {
+        if (!userMenuLanguageLabel) return;
+        userMenuLanguageLabel.textContent = `Language: ${getLanguageLabel(preferredLanguage)}`;
+    }
+
+    function updateSettingsToggleUI() {
+        if (settingsThinkingToggleBtn) {
+            settingsThinkingToggleBtn.classList.toggle('is-active', thinkingEnabled);
+            settingsThinkingToggleBtn.setAttribute('aria-pressed', thinkingEnabled ? 'true' : 'false');
+        }
+        if (settingsWebSearchToggleBtn) {
+            settingsWebSearchToggleBtn.classList.toggle('is-active', webSearchEnabled);
+            settingsWebSearchToggleBtn.setAttribute('aria-pressed', webSearchEnabled ? 'true' : 'false');
+        }
+    }
+
+    function syncSettingsUI() {
+        if (settingsNameInput) {
+            settingsNameInput.value = currentUserProfile?.name || 'User';
+        }
+        if (settingsLanguageSelect) {
+            settingsLanguageSelect.value = preferredLanguage || 'auto';
+        }
+        updateSettingsToggleUI();
+        updateLanguageMenuLabel();
+    }
+
+    function commitUserNameFromSettings() {
+        if (!settingsNameInput) return;
+        const nextName = settingsNameInput.value.trim().slice(0, 40);
+        if (!nextName) {
+            settingsNameInput.value = currentUserProfile?.name || 'User';
+            return;
+        }
+        if (nextName === currentUserProfile?.name) return;
+        currentUserProfile = {
+            id: slugifyUserId(nextName),
+            name: nextName
+        };
+        saveUserProfile(currentUserProfile);
+        updateUserProfileUI();
+        loadMemories();
+        if (memoryModal?.classList.contains('show')) {
+            renderMemoryList();
+        }
+    }
+
+    function openSettingsModal(focusTarget) {
+        if (!settingsModal) return;
+        syncSettingsUI();
+        settingsModal.classList.add('show');
+        if (focusTarget === 'language') {
+            settingsLanguageSelect?.focus();
+        } else {
+            settingsNameInput?.focus();
+        }
+    }
+
+    function closeSettingsModal() {
+        if (!settingsModal) return;
+        settingsModal.classList.remove('show');
+    }
+
+    function positionUserMenu(anchor) {
+        if (!userMenuDropdown || !anchor) return;
+        userMenuDropdown.classList.add('show');
+        const rect = anchor.getBoundingClientRect();
+        const dropdownRect = userMenuDropdown.getBoundingClientRect();
+        let left = rect.right - dropdownRect.width;
+        if (left < 16) left = 16;
+        if (left + dropdownRect.width > window.innerWidth - 16) {
+            left = Math.max(16, window.innerWidth - dropdownRect.width - 16);
+        }
+        let top = rect.bottom + 8;
+        if (top + dropdownRect.height > window.innerHeight - 16) {
+            top = rect.top - dropdownRect.height - 8;
+        }
+        userMenuDropdown.style.left = `${left}px`;
+        userMenuDropdown.style.top = `${top}px`;
+    }
+
+    function openUserMenu(anchor) {
+        if (!userMenuDropdown || !anchor) return;
+        activeUserMenuAnchor = anchor;
+        updateLanguageMenuLabel();
+        positionUserMenu(anchor);
+    }
+
+    function closeUserMenu() {
+        if (!userMenuDropdown) return;
+        userMenuDropdown.classList.remove('show');
+        activeUserMenuAnchor = null;
+    }
+
+    function toggleUserMenu(anchor) {
+        if (!userMenuDropdown || !anchor) return;
+        if (userMenuDropdown.classList.contains('show')) {
+            closeUserMenu();
+        } else {
+            openUserMenu(anchor);
+        }
     }
 
     function getMemoryStorageKey(userId) {
@@ -2452,6 +2607,7 @@ ${safeCode}
         const modelId = getSelectedModel();
         thinkingEnabled = modelSupportsThinking(modelId);
         updateThinkingToggleUI();
+        updateSettingsToggleUI();
         updateAttachmentAvailability();
         updateBrandingUI(getActiveModelMeta());
         updateSuggestionsForModel();
@@ -2459,6 +2615,7 @@ ${safeCode}
 
     updateModelDependentToggles();
     updateWebSearchToggleUI();
+    updateSettingsToggleUI();
     initArtifactPanel();
 
     // Elements
@@ -3164,18 +3321,20 @@ ${safeCode}
             ? `You have the following memory about the user:\n${userMemories.map(entry => `- ${entry.text}`).join('\n')}`
             : '';
 
+        const systemMessages = [];
         if (currentSystemPrompt && currentSystemPrompt.trim()) {
-            const systemMessages = [{ role: 'system', content: currentSystemPrompt.trim() }];
-            if (memoryBlock) {
-                systemMessages.push({ role: 'system', content: memoryBlock });
-            }
+            systemMessages.push({ role: 'system', content: currentSystemPrompt.trim() });
+        }
+        const languageInstruction = getLanguageInstruction();
+        if (languageInstruction) {
+            systemMessages.push({ role: 'system', content: languageInstruction });
+        }
+        if (memoryBlock) {
+            systemMessages.push({ role: 'system', content: memoryBlock });
+        }
+        if (systemMessages.length) {
             return [...systemMessages, ...messages];
         }
-
-        if (memoryBlock) {
-            return [{ role: 'system', content: memoryBlock }, ...messages];
-        }
-
         return messages;
     }
 
@@ -3231,6 +3390,8 @@ ${safeCode}
     // Initialize sidebar
     currentUserProfile = loadUserProfile();
     updateUserProfileUI();
+    applyLanguagePreference();
+    updateLanguageMenuLabel();
     renderSidebar();
     loadMemories();
 
@@ -3322,6 +3483,7 @@ ${safeCode}
         thinkingToggleBtn.addEventListener('click', () => {
             thinkingEnabled = !thinkingEnabled;
             updateThinkingToggleUI();
+            updateSettingsToggleUI();
         });
     }
 
@@ -3329,6 +3491,7 @@ ${safeCode}
         webSearchToggleBtn.addEventListener('click', () => {
             webSearchEnabled = !webSearchEnabled;
             updateWebSearchToggleUI();
+            updateSettingsToggleUI();
         });
     }
 
@@ -3557,23 +3720,107 @@ ${safeCode}
     }
 
     if (userProfileBtn) {
-        userProfileBtn.addEventListener('click', () => {
-            const nextName = prompt('Enter your name for memory personalization:', currentUserProfile?.name || 'User');
-            if (!nextName) return;
-            const trimmed = nextName.trim().slice(0, 40);
-            if (!trimmed) return;
-            currentUserProfile = {
-                id: slugifyUserId(trimmed),
-                name: trimmed
-            };
-            saveUserProfile(currentUserProfile);
-            updateUserProfileUI();
-            loadMemories();
-            if (memoryModal?.classList.contains('show')) {
-                renderMemoryList();
+        userProfileBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            toggleUserMenu(userProfileBtn);
+        });
+    }
+
+    if (headerUserBtn) {
+        headerUserBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            toggleUserMenu(headerUserBtn);
+        });
+    }
+
+    if (userMenuDropdown) {
+        userMenuDropdown.addEventListener('click', (event) => {
+            const item = event.target.closest('.user-menu-item');
+            if (!item) return;
+            event.preventDefault();
+            const action = item.dataset.action;
+            closeUserMenu();
+            if (action === 'settings') {
+                openSettingsModal();
+            } else if (action === 'language') {
+                openSettingsModal('language');
+            } else if (action === 'system-prompt') {
+                openSystemPromptModal();
+            } else if (action === 'memory') {
+                openMemoryModal();
+            } else if (action === 'shortcuts') {
+                openShortcutsModal();
             }
         });
     }
+
+    if (settingsCloseBtn) {
+        settingsCloseBtn.addEventListener('click', closeSettingsModal);
+    }
+
+    if (settingsModal) {
+        settingsModal.addEventListener('click', (event) => {
+            if (event.target === settingsModal) {
+                closeSettingsModal();
+            }
+        });
+    }
+
+    if (settingsNameInput) {
+        settingsNameInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                commitUserNameFromSettings();
+                settingsNameInput.blur();
+            }
+        });
+        settingsNameInput.addEventListener('blur', commitUserNameFromSettings);
+    }
+
+    if (settingsLanguageSelect) {
+        settingsLanguageSelect.addEventListener('change', () => {
+            const nextValue = settingsLanguageSelect.value || 'auto';
+            saveLanguagePreference(nextValue);
+            applyLanguagePreference();
+            updateLanguageMenuLabel();
+        });
+    }
+
+    if (settingsThinkingToggleBtn) {
+        settingsThinkingToggleBtn.addEventListener('click', () => {
+            thinkingEnabled = !thinkingEnabled;
+            updateThinkingToggleUI();
+            updateSettingsToggleUI();
+        });
+    }
+
+    if (settingsWebSearchToggleBtn) {
+        settingsWebSearchToggleBtn.addEventListener('click', () => {
+            webSearchEnabled = !webSearchEnabled;
+            updateWebSearchToggleUI();
+            updateSettingsToggleUI();
+        });
+    }
+
+    document.addEventListener('click', (event) => {
+        const insideMenu = event.target.closest('#user-menu-dropdown');
+        const insideTrigger = event.target.closest('#header-user-btn') || event.target.closest('.user-profile-btn');
+        if (!insideMenu && !insideTrigger) {
+            closeUserMenu();
+        }
+    });
+
+    window.addEventListener('resize', () => {
+        if (userMenuDropdown?.classList.contains('show') && activeUserMenuAnchor) {
+            positionUserMenu(activeUserMenuAnchor);
+        }
+    });
+
+    window.addEventListener('scroll', () => {
+        if (userMenuDropdown?.classList.contains('show')) {
+            closeUserMenu();
+        }
+    }, true);
 
     // Auto-resize textarea
     chatInput.addEventListener('input', function () {
@@ -3923,6 +4170,8 @@ ${safeCode}
         if (memoryModal) memoryModal.classList.remove('show');
         closeMemoryDeletePopover();
         if (shortcutsModal) shortcutsModal.classList.remove('show');
+        closeSettingsModal();
+        closeUserMenu();
         if (modelSelector) modelSelector.classList.remove('open');
         hideGlobalDropdown();
         closeTagEditor();
@@ -3987,6 +4236,7 @@ ${safeCode}
             event.preventDefault();
             thinkingEnabled = !thinkingEnabled;
             updateThinkingToggleUI();
+            updateSettingsToggleUI();
             return;
         }
 
@@ -3994,6 +4244,7 @@ ${safeCode}
             event.preventDefault();
             webSearchEnabled = !webSearchEnabled;
             updateWebSearchToggleUI();
+            updateSettingsToggleUI();
             return;
         }
     });
