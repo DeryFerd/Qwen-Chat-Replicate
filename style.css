@@ -1398,6 +1398,50 @@ ul {
     width: fit-content;
 }
 
+.tool-activity.is-interactive {
+    padding: 0;
+    overflow: hidden;
+}
+
+.tool-activity-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 6px 10px;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    text-align: left;
+}
+
+.tool-activity-main {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.tool-activity-text {
+    min-width: 0;
+}
+
+.tool-activity-arrow {
+    color: var(--text-secondary);
+    transition: transform var(--transition), color var(--transition);
+}
+
+.tool-activity.is-interactive:hover {
+    border-color: var(--accent);
+    background-color: var(--bg-surface-hover);
+}
+
+.tool-activity.is-interactive:hover .tool-activity-arrow {
+    color: var(--text-primary);
+    transform: translateX(2px);
+}
+
 .tool-activity-count {
     display: inline-flex;
     align-items: center;
@@ -1415,6 +1459,11 @@ ul {
 
 .sources-row::-webkit-scrollbar {
     display: none;
+}
+
+.sources-row.is-highlighted .source-card {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--ring-focus);
 }
 
 .source-card {

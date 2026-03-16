@@ -2075,6 +2075,22 @@ ${safeCode}
         return results;
     }
 
+    function collectWebSearchToolMessagesBefore(messages, assistantIndex) {
+        const matches = [];
+        if (!Array.isArray(messages)) return matches;
+
+        for (let i = assistantIndex - 1; i >= 0; i -= 1) {
+            const message = messages[i];
+            if (message?.role === 'tool' && message?.tool_name === 'web_search') {
+                matches.push(message);
+                continue;
+            }
+            if (matches.length > 0) break;
+        }
+
+        return matches.reverse();
+    }
+
     function renderSourcesForAssistant(messageDiv, assistantIndex) {
         if (!messageDiv) return;
         const messageContent = messageDiv.querySelector('.message-content');
@@ -2088,6 +2104,7 @@ ${safeCode}
 
         const row = document.createElement('div');
         row.className = 'sources-row';
+        row.tabIndex = -1;
 
         results.forEach(result => {
             const title = truncateText(result?.title || 'Untitled source', 55);
@@ -2123,17 +2140,101 @@ ${safeCode}
         return true;
     }
 
-    function updateToolActivity(messageDiv, text, count = 0) {
+    function focusToolSources(messageDiv) {
+        if (!messageDiv) return false;
+        const row = messageDiv.querySelector('.sources-row');
+        if (!row) return false;
+
+        row.classList.remove('is-highlighted');
+        row.scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest',
+            inline: 'nearest'
+        });
+        requestAnimationFrame(() => {
+            row.classList.add('is-highlighted');
+            setTimeout(() => {
+                row.classList.remove('is-highlighted');
+            }, 1400);
+        });
+        return true;
+    }
+
+    function syncWebSearchActivity(messageDiv, assistantIndex, fallbackText = '', fallbackCount = 0) {
+        if (!messageDiv) return false;
+
+        const hasSources = typeof assistantIndex === 'number'
+            ? renderSourcesForAssistant(messageDiv, assistantIndex)
+            : Boolean(messageDiv.querySelector('.sources-row'));
+
+        if (hasSources) {
+            const searchMessages = typeof assistantIndex === 'number'
+                ? collectWebSearchToolMessagesBefore(currentMessages, assistantIndex)
+                : [];
+            const count = fallbackCount
+                || searchMessages.length
+                || (Number.parseInt(messageDiv.dataset.webSearchCount || '0', 10) || 0);
+
+            messageDiv.dataset.webSearchUsed = 'true';
+            messageDiv.dataset.webSearchCount = String(count);
+            messageDiv.dataset.webSearchLastText = 'View web sources';
+            updateToolActivity(messageDiv, 'View web sources', count, { interactive: true });
+            return true;
+        }
+
+        if (messageDiv.dataset.webSearchUsed === 'true') {
+            const lastText = fallbackText || messageDiv.dataset.webSearchLastText || 'Web search used';
+            const lastCount = fallbackCount || (Number.parseInt(messageDiv.dataset.webSearchCount || '0', 10) || 0);
+            updateToolActivity(messageDiv, lastText, lastCount);
+            return false;
+        }
+
+        updateToolActivity(messageDiv, '');
+        return false;
+    }
+
+    function updateToolActivity(messageDiv, text, count = 0, options = {}) {
         if (!messageDiv) return;
         const activity = messageDiv.querySelector('.tool-activity');
         if (!activity) return;
+        const isInteractive = Boolean(options?.interactive);
+
         if (text) {
-            activity.innerHTML = count > 1
-                ? `<i class="ph ph-globe"></i> ${escapeHtml(text)} <span class="tool-activity-count">${count}</span>`
-                : `<i class="ph ph-globe"></i> ${escapeHtml(text)}`;
+            const countMarkup = count > 1
+                ? `<span class="tool-activity-count">${count}</span>`
+                : '';
+
+            activity.classList.toggle('is-interactive', isInteractive);
+            activity.innerHTML = isInteractive
+                ? `
+                    <button type="button" class="tool-activity-trigger">
+                        <span class="tool-activity-main">
+                            <i class="ph ph-globe"></i>
+                            <span class="tool-activity-text">${escapeHtml(text)}</span>
+                            ${countMarkup}
+                        </span>
+                        <i class="ph ph-arrow-right tool-activity-arrow"></i>
+                    </button>
+                `
+                : `
+                    <span class="tool-activity-main">
+                        <i class="ph ph-globe"></i>
+                        <span class="tool-activity-text">${escapeHtml(text)}</span>
+                        ${countMarkup}
+                    </span>
+                `;
             activity.hidden = false;
+
+            const trigger = activity.querySelector('.tool-activity-trigger');
+            if (trigger) {
+                trigger.addEventListener('click', () => {
+                    focusToolSources(messageDiv);
+                });
+            }
         } else {
             activity.hidden = true;
+            activity.classList.remove('is-interactive');
+            activity.innerHTML = '';
         }
     }
 
@@ -3465,20 +3566,10 @@ ${safeCode}
                 modelMeta: selectedModelMeta
             });
             saveCurrentChat();
-            const hasSources = renderSourcesForAssistant(assistantMessage, currentMessages.length - 1);
             if (assistantMessage.dataset.webSearchUsed === 'true') {
-                if (!hasSources) {
-                    const lastActivity = assistantMessage.querySelector('.tool-activity');
-                    if (lastActivity && !lastActivity.hidden) {
-                        // Keep the last visible activity text.
-                    } else {
-                        const lastText = assistantMessage.dataset.webSearchLastText || 'Web search used';
-                        const lastCount = Number.parseInt(assistantMessage.dataset.webSearchCount || '0', 10) || 0;
-                        updateToolActivity(assistantMessage, lastText, lastCount);
-                    }
-                } else {
-                    updateToolActivity(assistantMessage, '');
-                }
+                const lastText = assistantMessage.dataset.webSearchLastText || 'Web search used';
+                const lastCount = Number.parseInt(assistantMessage.dataset.webSearchCount || '0', 10) || 0;
+                syncWebSearchActivity(assistantMessage, currentMessages.length - 1, lastText, lastCount);
             } else {
                 updateToolActivity(assistantMessage, '');
             }
@@ -4108,7 +4199,7 @@ ${safeCode}
             });
 
             if (typeof messageData.messageIndex === 'number') {
-                renderSourcesForAssistant(messageDiv, messageData.messageIndex);
+                syncWebSearchActivity(messageDiv, messageData.messageIndex);
             }
 
             if (!messageData.pendingThinking) {
