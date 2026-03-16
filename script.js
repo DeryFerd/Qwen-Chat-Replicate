@@ -2123,12 +2123,14 @@ ${safeCode}
         return true;
     }
 
-    function updateToolActivity(messageDiv, text) {
+    function updateToolActivity(messageDiv, text, count = 0) {
         if (!messageDiv) return;
         const activity = messageDiv.querySelector('.tool-activity');
         if (!activity) return;
         if (text) {
-            activity.textContent = text;
+            activity.innerHTML = count > 1
+                ? `<i class="ph ph-globe"></i> ${escapeHtml(text)} <span class="tool-activity-count">${count}</span>`
+                : `<i class="ph ph-globe"></i> ${escapeHtml(text)}`;
             activity.hidden = false;
         } else {
             activity.hidden = true;
@@ -3430,12 +3432,15 @@ ${safeCode}
             finalized: false
         });
         assistantMessage.dataset.webSearchUsed = 'false';
+        assistantMessage.dataset.webSearchCount = '0';
+        assistantMessage.dataset.webSearchLastText = '';
         updateToolActivity(assistantMessage, '');
         const controller = new AbortController();
         activeAbortController = controller;
         setSendButtonMode('stop');
         let didFinalize = false;
         const pendingToolMessages = [];
+        let webSearchCount = 0;
 
         const finalizeAssistantMessage = ({ aborted } = {}) => {
             if (didFinalize) return;
@@ -3461,8 +3466,19 @@ ${safeCode}
             });
             saveCurrentChat();
             const hasSources = renderSourcesForAssistant(assistantMessage, currentMessages.length - 1);
-            if (assistantMessage.dataset.webSearchUsed === 'true' && !hasSources) {
-                updateToolActivity(assistantMessage, 'Web search used');
+            if (assistantMessage.dataset.webSearchUsed === 'true') {
+                if (!hasSources) {
+                    const lastActivity = assistantMessage.querySelector('.tool-activity');
+                    if (lastActivity && !lastActivity.hidden) {
+                        // Keep the last visible activity text.
+                    } else {
+                        const lastText = assistantMessage.dataset.webSearchLastText || 'Web search used';
+                        const lastCount = Number.parseInt(assistantMessage.dataset.webSearchCount || '0', 10) || 0;
+                        updateToolActivity(assistantMessage, lastText, lastCount);
+                    }
+                } else {
+                    updateToolActivity(assistantMessage, '');
+                }
             } else {
                 updateToolActivity(assistantMessage, '');
             }
@@ -3559,9 +3575,51 @@ ${safeCode}
                                 content: parsed?.message?.content || ''
                             });
                         }
-                        if (Array.isArray(toolCalls) && toolCalls.some(call => call?.function?.name === 'web_search')) {
+
+                        if (Array.isArray(toolCalls) && toolCalls.length) {
+                            const searchCall = toolCalls.find(call => call?.function?.name === 'web_search');
+                            if (searchCall) {
+                                assistantMessage.dataset.webSearchUsed = 'true';
+                                webSearchCount += 1;
+                                assistantMessage.dataset.webSearchCount = String(webSearchCount);
+
+                                let query = '';
+                                try {
+                                    const args = typeof searchCall.function.arguments === 'string'
+                                        ? JSON.parse(searchCall.function.arguments)
+                                        : searchCall.function.arguments;
+                                    query = args?.query || '';
+                                } catch {
+                                    query = '';
+                                }
+
+                                const searchText = query
+                                    ? `Searching the web for "${query}"...`
+                                    : 'Searching the web...';
+                                assistantMessage.dataset.webSearchLastText = searchText;
+                                updateToolActivity(assistantMessage, searchText, webSearchCount);
+                            }
+                        }
+
+                        if (toolName === 'web_search') {
+                            const lastSearch = pendingToolMessages
+                                .filter(message => message.tool_name === 'web_search')
+                                .slice(-1)[0];
+                            let doneQuery = '';
+                            try {
+                                const parsedSearch = JSON.parse(lastSearch?.content || '{}');
+                                doneQuery = parsedSearch?.query || '';
+                            } catch {
+                                doneQuery = '';
+                            }
+
+                            const completedText = doneQuery
+                                ? `Searched the web for "${doneQuery}"`
+                                : 'Web search complete';
                             assistantMessage.dataset.webSearchUsed = 'true';
-                            updateToolActivity(assistantMessage, 'Searching the web...');
+                            assistantMessage.dataset.webSearchLastText = completedText;
+                            assistantMessage.dataset.webSearchCount = String(webSearchCount);
+                            updateToolActivity(assistantMessage, completedText, webSearchCount);
                         }
 
                         updateAssistantMessageState(assistantMessage, {
