@@ -2124,9 +2124,9 @@ ${safeCode}
     }
 
     function renderSourcesForAssistant(messageDiv, assistantIndex) {
-        if (!messageDiv) return;
+        if (!messageDiv) return false;
         const messageContent = messageDiv.querySelector('.message-content');
-        if (!messageContent) return;
+        if (!messageContent) return false;
 
         const existing = messageContent.querySelector('.sources-row');
         if (existing) existing.remove();
@@ -2134,9 +2134,13 @@ ${safeCode}
         const results = collectWebSearchResultsBefore(currentMessages, assistantIndex);
         if (!results.length) return false;
 
+        const activity = messageDiv.querySelector('.tool-activity');
+        const expanded = activity?.dataset.expanded === 'true';
+
         const row = document.createElement('div');
         row.className = 'sources-row';
         row.tabIndex = -1;
+        row.hidden = !expanded;
 
         results.forEach(result => {
             const title = truncateText(result?.title || 'Untitled source', 55);
@@ -2241,13 +2245,17 @@ ${safeCode}
         if (!messageDiv) return;
         const activity = messageDiv.querySelector('.tool-activity');
         if (!activity) return;
-        const sourceResults = dedupeWebSearchResults(options?.sources || []);
         const isInteractive = Boolean(options?.interactive);
 
         if (text) {
             activity.hidden = false;
             activity.classList.toggle('is-interactive', isInteractive);
             activity.classList.toggle('is-open', false);
+            activity.dataset.expanded = 'false';
+            const existingRow = messageDiv.querySelector('.sources-row');
+            if (existingRow) {
+                existingRow.hidden = true;
+            }
             activity.innerHTML = '';
 
             const trigger = document.createElement(isInteractive ? 'button' : 'div');
@@ -2279,56 +2287,13 @@ ${safeCode}
 
             trigger.appendChild(main);
 
-            let list = null;
             if (isInteractive) {
                 const arrow = document.createElement('i');
                 arrow.className = 'ph ph-caret-right tool-activity-arrow';
                 trigger.appendChild(arrow);
 
-                list = document.createElement('div');
-                list.className = 'tool-activity-list';
-                list.hidden = true;
-
-                if (sourceResults.length) {
-                    sourceResults.forEach(result => {
-                        const url = result?.url || '#';
-                        const domain = extractDomain(url);
-                        const item = document.createElement('a');
-                        item.className = 'tool-activity-item';
-                        item.href = url;
-                        item.target = '_blank';
-                        item.rel = 'noopener noreferrer';
-                        item.addEventListener('click', (event) => {
-                            event.stopPropagation();
-                        });
-
-                        const favicon = document.createElement('img');
-                        favicon.className = 'tool-activity-item-favicon';
-                        favicon.alt = '';
-                        favicon.src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=16`;
-
-                        const copy = document.createElement('span');
-                        copy.className = 'tool-activity-item-copy';
-
-                        const titleEl = document.createElement('span');
-                        titleEl.className = 'tool-activity-item-title';
-                        titleEl.textContent = truncateText(result?.title || domain || 'Untitled source', 52);
-
-                        const domainEl = document.createElement('span');
-                        domainEl.className = 'tool-activity-item-domain';
-                        domainEl.textContent = domain;
-
-                        copy.appendChild(titleEl);
-                        copy.appendChild(domainEl);
-                        item.appendChild(favicon);
-                        item.appendChild(copy);
-                        list.appendChild(item);
-                    });
-                } else {
-                    const empty = document.createElement('div');
-                    empty.className = 'tool-activity-item tool-activity-item-empty';
-                    empty.textContent = 'Search sources are still loading...';
-                    list.appendChild(empty);
+                if (!activity.dataset.expanded) {
+                    activity.dataset.expanded = 'false';
                 }
 
                 trigger.addEventListener('click', () => {
@@ -2336,16 +2301,14 @@ ${safeCode}
                     const nextExpanded = !expanded;
                     activity.dataset.expanded = String(nextExpanded);
                     activity.classList.toggle('is-open', nextExpanded);
-                    if (list) {
-                        list.hidden = !nextExpanded;
+                    const row = messageDiv.querySelector('.sources-row');
+                    if (row) {
+                        row.hidden = !nextExpanded;
                     }
                 });
             }
 
             activity.appendChild(trigger);
-            if (list) {
-                activity.appendChild(list);
-            }
         } else {
             activity.hidden = true;
             activity.classList.remove('is-interactive');
@@ -4354,5 +4317,9 @@ ${safeCode}
         return messageDiv;
     }
 });
+
+
+
+
 
 
