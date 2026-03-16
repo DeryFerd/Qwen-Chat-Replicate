@@ -2128,8 +2128,8 @@ ${safeCode}
         const messageContent = messageDiv.querySelector('.message-content');
         if (!messageContent) return false;
 
-        const existing = messageContent.querySelector('.sources-row');
-        if (existing) existing.remove();
+        const existingRows = messageContent.querySelectorAll('.sources-row');
+        existingRows.forEach(row => row.remove());
 
         if (!Array.isArray(results) || results.length === 0) return false;
 
@@ -2137,6 +2137,7 @@ ${safeCode}
         row.className = 'sources-row';
         row.tabIndex = -1;
         row.hidden = !expanded;
+        row.style.display = expanded ? '' : 'none';
 
         results.forEach(result => {
             const title = truncateText(result?.title || 'Untitled source', 55);
@@ -2265,7 +2266,7 @@ ${safeCode}
             activity.classList.toggle('is-interactive', isInteractive);
             const storedExpanded = activity.dataset.expanded;
             if (storedExpanded !== 'true' && storedExpanded !== 'false') {
-                activity.dataset.expanded = hasSources ? 'true' : 'false';
+                activity.dataset.expanded = 'false';
             } else if (!hasSources) {
                 activity.dataset.expanded = 'false';
             }
@@ -2318,22 +2319,25 @@ ${safeCode}
                     activity.dataset.expanded = String(nextExpanded);
                     activity.classList.toggle('is-open', nextExpanded);
                     toggleBtn.textContent = nextExpanded ? 'Hide' : 'Show';
+
                     let row = activity.querySelector('.sources-row');
-                    if (!row) {
+                    if (!row && nextExpanded) {
                         const stored = messageDiv.dataset.webSearchSources;
                         if (stored) {
                             try {
                                 const parsed = JSON.parse(stored);
-                                renderSourcesRow(messageDiv, parsed, nextExpanded);
+                                renderSourcesRow(messageDiv, parsed, true);
                                 row = activity.querySelector('.sources-row');
                             } catch {
                                 row = null;
                             }
                         }
                     }
-                    if (row) {
-                        row.hidden = !nextExpanded;
-                    }
+                    const rows = activity.querySelectorAll('.sources-row');
+                    rows.forEach(item => {
+                        item.hidden = !nextExpanded;
+                        item.style.display = nextExpanded ? '' : 'none';
+                    });
                 });
 
                 trigger.appendChild(toggleBtn);
