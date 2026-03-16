@@ -1432,9 +1432,16 @@ ul {
     min-width: 0;
 }
 
-.tool-activity-arrow {
+
+.tool-activity-toggle {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--border-color);
     color: var(--text-secondary);
-    transition: transform var(--transition), color var(--transition);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    cursor: pointer;
 }
 
 .tool-activity.is-interactive:hover {
@@ -1442,14 +1449,9 @@ ul {
     background-color: var(--bg-surface-hover);
 }
 
-.tool-activity.is-interactive:not(.is-open):hover .tool-activity-arrow {
-    color: var(--text-primary);
-    transform: translateX(2px);
-}
+.tool-activity.is-interactive:not(.is-open):hover 
 
-.tool-activity.is-open .tool-activity-arrow {
-    transform: rotate(90deg);
-}
+.tool-activity.is-open 
 
 .tool-activity-list {
     display: flex;
@@ -2539,6 +2541,7 @@ body.artifact-open .main-content {
         max-width: 100%;
     }
 }
+
 
 
 

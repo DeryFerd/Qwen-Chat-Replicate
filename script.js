@@ -2263,10 +2263,15 @@ ${safeCode}
         if (text) {
             activity.hidden = false;
             activity.classList.toggle('is-interactive', isInteractive);
-            activity.classList.toggle('is-open', false);
-            activity.dataset.expanded = 'false';
+            const storedExpanded = activity.dataset.expanded;
+            if (storedExpanded !== 'true' && storedExpanded !== 'false') {
+                activity.dataset.expanded = hasSources ? 'true' : 'false';
+            } else if (!hasSources) {
+                activity.dataset.expanded = 'false';
+            }
+            const isExpanded = activity.dataset.expanded === 'true';
+            activity.classList.toggle('is-open', isExpanded);
             activity.innerHTML = '';
-
 
             if (hasSources) {
                 messageDiv.dataset.webSearchSources = JSON.stringify(sourceResults);
@@ -2302,15 +2307,42 @@ ${safeCode}
             trigger.appendChild(main);
 
             if (isInteractive) {
-                const arrow = document.createElement('i');
-                arrow.className = 'ph ph-caret-right tool-activity-arrow';
-                trigger.appendChild(arrow);
+                const toggleBtn = document.createElement('button');
+                toggleBtn.type = 'button';
+                toggleBtn.className = 'tool-activity-toggle';
+                toggleBtn.textContent = isExpanded ? 'Hide' : 'Show';
+
+                toggleBtn.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    const nextExpanded = activity.dataset.expanded !== 'true';
+                    activity.dataset.expanded = String(nextExpanded);
+                    activity.classList.toggle('is-open', nextExpanded);
+                    toggleBtn.textContent = nextExpanded ? 'Hide' : 'Show';
+                    let row = activity.querySelector('.sources-row');
+                    if (!row) {
+                        const stored = messageDiv.dataset.webSearchSources;
+                        if (stored) {
+                            try {
+                                const parsed = JSON.parse(stored);
+                                renderSourcesRow(messageDiv, parsed, nextExpanded);
+                                row = activity.querySelector('.sources-row');
+                            } catch {
+                                row = null;
+                            }
+                        }
+                    }
+                    if (row) {
+                        row.hidden = !nextExpanded;
+                    }
+                });
+
+                trigger.appendChild(toggleBtn);
             }
 
             activity.appendChild(trigger);
 
             if (hasSources) {
-                renderSourcesRow(messageDiv, sourceResults, true);
+                renderSourcesRow(messageDiv, sourceResults, isExpanded);
             }
         } else {
             activity.hidden = true;
