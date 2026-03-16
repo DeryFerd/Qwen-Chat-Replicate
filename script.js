@@ -2123,7 +2123,7 @@ ${safeCode}
         });
     }
 
-    function renderSourcesForAssistant(messageDiv, assistantIndex) {
+    function renderSourcesRow(messageDiv, results, expanded = false) {
         if (!messageDiv) return false;
         const messageContent = messageDiv.querySelector('.message-content');
         if (!messageContent) return false;
@@ -2131,11 +2131,7 @@ ${safeCode}
         const existing = messageContent.querySelector('.sources-row');
         if (existing) existing.remove();
 
-        const results = collectWebSearchResultsBefore(currentMessages, assistantIndex);
-        if (!results.length) return false;
-
-        const activity = messageDiv.querySelector('.tool-activity');
-        const expanded = activity?.dataset.expanded === 'true';
+        if (!Array.isArray(results) || results.length === 0) return false;
 
         const row = document.createElement('div');
         row.className = 'sources-row';
@@ -2174,6 +2170,15 @@ ${safeCode}
 
         messageContent.appendChild(row);
         return true;
+    }
+
+    function renderSourcesForAssistant(messageDiv, assistantIndex) {
+        if (!messageDiv) return false;
+        const results = collectWebSearchResultsBefore(currentMessages, assistantIndex);
+        if (!results.length) return false;
+        const activity = messageDiv.querySelector('.tool-activity');
+        const expanded = activity?.dataset.expanded === 'true';
+        return renderSourcesRow(messageDiv, results, expanded);
     }
 
     function focusToolSources(messageDiv) {
@@ -2245,6 +2250,7 @@ ${safeCode}
         if (!messageDiv) return;
         const activity = messageDiv.querySelector('.tool-activity');
         if (!activity) return;
+        const sourceResults = dedupeWebSearchResults(options?.sources || []);
         const isInteractive = Boolean(options?.interactive);
 
         if (text) {
@@ -2257,6 +2263,11 @@ ${safeCode}
                 existingRow.hidden = true;
             }
             activity.innerHTML = '';
+
+            if (sourceResults.length) {
+                messageDiv.dataset.webSearchSources = JSON.stringify(sourceResults);
+                renderSourcesRow(messageDiv, sourceResults, false);
+            }
 
             const trigger = document.createElement(isInteractive ? 'button' : 'div');
             trigger.className = 'tool-activity-trigger';
@@ -2301,7 +2312,19 @@ ${safeCode}
                     const nextExpanded = !expanded;
                     activity.dataset.expanded = String(nextExpanded);
                     activity.classList.toggle('is-open', nextExpanded);
-                    const row = messageDiv.querySelector('.sources-row');
+                    let row = messageDiv.querySelector('.sources-row');
+                    if (!row) {
+                        const stored = messageDiv.dataset.webSearchSources;
+                        if (stored) {
+                            try {
+                                const parsed = JSON.parse(stored);
+                                renderSourcesRow(messageDiv, parsed, nextExpanded);
+                                row = messageDiv.querySelector('.sources-row');
+                            } catch {
+                                row = null;
+                            }
+                        }
+                    }
                     if (row) {
                         row.hidden = !nextExpanded;
                     }
@@ -4317,6 +4340,10 @@ ${safeCode}
         return messageDiv;
     }
 });
+
+
+
+
 
 
 
