@@ -1383,11 +1383,14 @@ ul {
     overflow-x: auto;
     padding-bottom: 4px;
     scrollbar-width: none;
+    position: relative;
+    z-index: 1;
 }
 
 .tool-activity {
     display: inline-flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     gap: 6px;
     font-size: 13px;
     color: var(--text-muted);
@@ -1396,6 +1399,8 @@ ul {
     padding: 6px 10px;
     border-radius: var(--radius-md);
     width: fit-content;
+    position: relative;
+    z-index: 1;
 }
 
 .tool-activity.is-interactive {
@@ -1439,9 +1444,71 @@ ul {
     background-color: var(--bg-surface-hover);
 }
 
-.tool-activity.is-interactive:hover .tool-activity-arrow {
+.tool-activity.is-interactive:not(.is-open):hover .tool-activity-arrow {
     color: var(--text-primary);
     transform: translateX(2px);
+}
+
+.tool-activity.is-open .tool-activity-arrow {
+    transform: rotate(90deg);
+}
+
+.tool-activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 10px 10px;
+    min-width: 280px;
+    max-width: 420px;
+}
+
+.tool-activity-item {
+    display: grid;
+    grid-template-columns: 16px 1fr;
+    gap: 4px 10px;
+    align-items: center;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    pointer-events: auto;
+}
+
+.tool-activity-item:hover {
+    border-color: var(--accent);
+    background-color: var(--bg-surface-hover);
+}
+
+.tool-activity-item-empty {
+    display: block;
+    color: var(--text-secondary);
+}
+
+.tool-activity-item-favicon {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    background: var(--bg-surface-hover);
+    object-fit: contain;
+}
+
+.tool-activity-item-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.tool-activity-item-title {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.tool-activity-item-domain {
+    font-size: 11px;
+    color: var(--text-secondary);
 }
 
 .tool-activity-count {
@@ -1481,6 +1548,9 @@ ul {
     border-radius: var(--radius-md);
     color: var(--text-primary);
     transition: transform var(--transition), box-shadow var(--transition);
+    position: relative;
+    z-index: 1;
+    pointer-events: auto;
 }
 
 .source-card:hover {

@@ -2113,6 +2113,16 @@ ${safeCode}
         return { count, query, text };
     }
 
+    function dedupeWebSearchResults(results) {
+        const seen = new Set();
+        return (Array.isArray(results) ? results : []).filter(result => {
+            const key = result?.url || `${result?.title || ''}|${result?.content || ''}`;
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+
     function renderSourcesForAssistant(messageDiv, assistantIndex) {
         if (!messageDiv) return;
         const messageContent = messageDiv.querySelector('.message-content');
@@ -2199,10 +2209,16 @@ ${safeCode}
             : Boolean(messageDiv.querySelector('.sources-row'));
 
         if (hasSources) {
+            const sourceResults = typeof assistantIndex === 'number'
+                ? dedupeWebSearchResults(collectWebSearchResultsBefore(currentMessages, assistantIndex))
+                : [];
             messageDiv.dataset.webSearchUsed = 'true';
             messageDiv.dataset.webSearchCount = String(resolvedCount);
             messageDiv.dataset.webSearchLastText = resolvedText;
-            updateToolActivity(messageDiv, resolvedText, resolvedCount, { interactive: true });
+            updateToolActivity(messageDiv, resolvedText, resolvedCount, {
+                interactive: true,
+                sources: sourceResults
+            });
             return true;
         }
 
@@ -2210,7 +2226,10 @@ ${safeCode}
             messageDiv.dataset.webSearchUsed = 'true';
             messageDiv.dataset.webSearchCount = String(resolvedCount);
             messageDiv.dataset.webSearchLastText = resolvedText;
-            updateToolActivity(messageDiv, resolvedText, resolvedCount, { interactive: true });
+            updateToolActivity(messageDiv, resolvedText, resolvedCount, {
+                interactive: true,
+                sources: []
+            });
             return false;
         }
 
@@ -2222,43 +2241,116 @@ ${safeCode}
         if (!messageDiv) return;
         const activity = messageDiv.querySelector('.tool-activity');
         if (!activity) return;
+        const sourceResults = dedupeWebSearchResults(options?.sources || []);
         const isInteractive = Boolean(options?.interactive);
 
         if (text) {
-            const countMarkup = count > 1
-                ? `<span class="tool-activity-count">${count}</span>`
-                : '';
-
-            activity.classList.toggle('is-interactive', isInteractive);
-            activity.innerHTML = isInteractive
-                ? `
-                    <button type="button" class="tool-activity-trigger">
-                        <span class="tool-activity-main">
-                            <i class="ph ph-globe"></i>
-                            <span class="tool-activity-text">${escapeHtml(text)}</span>
-                            ${countMarkup}
-                        </span>
-                        <i class="ph ph-arrow-right tool-activity-arrow"></i>
-                    </button>
-                `
-                : `
-                    <span class="tool-activity-main">
-                        <i class="ph ph-globe"></i>
-                        <span class="tool-activity-text">${escapeHtml(text)}</span>
-                        ${countMarkup}
-                    </span>
-                `;
             activity.hidden = false;
+            activity.classList.toggle('is-interactive', isInteractive);
+            activity.classList.toggle('is-open', false);
+            activity.innerHTML = '';
 
-            const trigger = activity.querySelector('.tool-activity-trigger');
-            if (trigger) {
+            const trigger = document.createElement(isInteractive ? 'button' : 'div');
+            trigger.className = 'tool-activity-trigger';
+            if (isInteractive) {
+                trigger.type = 'button';
+            } else {
+                trigger.classList.add('is-static');
+            }
+
+            const main = document.createElement('span');
+            main.className = 'tool-activity-main';
+
+            const globeIcon = document.createElement('i');
+            globeIcon.className = 'ph ph-globe';
+            main.appendChild(globeIcon);
+
+            const textEl = document.createElement('span');
+            textEl.className = 'tool-activity-text';
+            textEl.textContent = text;
+            main.appendChild(textEl);
+
+            if (count > 1) {
+                const badge = document.createElement('span');
+                badge.className = 'tool-activity-count';
+                badge.textContent = String(count);
+                main.appendChild(badge);
+            }
+
+            trigger.appendChild(main);
+
+            let list = null;
+            if (isInteractive) {
+                const arrow = document.createElement('i');
+                arrow.className = 'ph ph-caret-right tool-activity-arrow';
+                trigger.appendChild(arrow);
+
+                list = document.createElement('div');
+                list.className = 'tool-activity-list';
+                list.hidden = true;
+
+                if (sourceResults.length) {
+                    sourceResults.forEach(result => {
+                        const url = result?.url || '#';
+                        const domain = extractDomain(url);
+                        const item = document.createElement('a');
+                        item.className = 'tool-activity-item';
+                        item.href = url;
+                        item.target = '_blank';
+                        item.rel = 'noopener noreferrer';
+                        item.addEventListener('click', (event) => {
+                            event.stopPropagation();
+                        });
+
+                        const favicon = document.createElement('img');
+                        favicon.className = 'tool-activity-item-favicon';
+                        favicon.alt = '';
+                        favicon.src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=16`;
+
+                        const copy = document.createElement('span');
+                        copy.className = 'tool-activity-item-copy';
+
+                        const titleEl = document.createElement('span');
+                        titleEl.className = 'tool-activity-item-title';
+                        titleEl.textContent = truncateText(result?.title || domain || 'Untitled source', 52);
+
+                        const domainEl = document.createElement('span');
+                        domainEl.className = 'tool-activity-item-domain';
+                        domainEl.textContent = domain;
+
+                        copy.appendChild(titleEl);
+                        copy.appendChild(domainEl);
+                        item.appendChild(favicon);
+                        item.appendChild(copy);
+                        list.appendChild(item);
+                    });
+                } else {
+                    const empty = document.createElement('div');
+                    empty.className = 'tool-activity-item tool-activity-item-empty';
+                    empty.textContent = 'Search sources are still loading...';
+                    list.appendChild(empty);
+                }
+
                 trigger.addEventListener('click', () => {
-                    focusToolSources(messageDiv);
+                    const expanded = activity.dataset.expanded === 'true';
+                    const nextExpanded = !expanded;
+                    activity.dataset.expanded = String(nextExpanded);
+                    activity.classList.toggle('is-open', nextExpanded);
+                    if (list) {
+                        list.hidden = !nextExpanded;
+                    }
                 });
+            }
+
+            activity.appendChild(trigger);
+            if (list) {
+                activity.appendChild(list);
             }
         } else {
             activity.hidden = true;
             activity.classList.remove('is-interactive');
+            activity.classList.remove('is-open');
+            delete activity.dataset.expanded;
             activity.innerHTML = '';
         }
     }
