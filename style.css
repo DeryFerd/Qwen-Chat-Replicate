@@ -968,10 +968,14 @@ ul {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    position: relative;
+    padding-top: 32px;
 }
 
 .table-copy-btn {
-    align-self: flex-end;
+    position: absolute;
+    top: 6px;
+    right: 6px;
     padding: 6px 10px;
     border-radius: var(--radius-sm);
     border: 1px solid var(--border-color);
@@ -980,6 +984,7 @@ ul {
     font-size: 12px;
     cursor: pointer;
     transition: all var(--transition);
+    z-index: 1;
 }
 
 .table-copy-btn:hover {
