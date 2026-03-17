@@ -968,25 +968,21 @@ ul {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    position: relative;
-    padding-top: 0;
 }
 
 .table-copy-btn {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 28px;
-    height: 28px;
+    float: right;
+    margin-left: 8px;
+    width: 22px;
+    height: 22px;
     padding: 0;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
-    background-color: var(--bg-surface);
+    border-radius: 6px;
+    border: none;
+    background: transparent;
     color: var(--text-muted);
     font-size: 14px;
     cursor: pointer;
     transition: all var(--transition);
-    z-index: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;

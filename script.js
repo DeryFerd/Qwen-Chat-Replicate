@@ -297,7 +297,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 wrapper.appendChild(table);
             }
 
-            if (wrapper.querySelector('.table-copy-btn')) return;
+            const headerRow = table.querySelector('thead tr') || table.querySelector('tr');
+            const headerCell = headerRow ? headerRow.querySelector('th:last-child, td:last-child') : null;
+            if (!headerCell) return;
+            if (headerCell.querySelector('.table-copy-btn')) return;
 
             const button = document.createElement('button');
             button.type = 'button';
@@ -320,7 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 1200);
             });
 
-            table.parentNode?.insertBefore(button, table);
+            headerCell.appendChild(button);
         });
     }
 
