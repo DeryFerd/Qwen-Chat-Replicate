@@ -934,6 +934,35 @@ ul {
     gap: 8px;
 }
 
+.message-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.message-copy-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-surface);
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.message-copy-btn:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
+}
+
+.message-copy-btn.is-failed {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
 .message-content.has-mermaid {
     max-width: 100%;
 }

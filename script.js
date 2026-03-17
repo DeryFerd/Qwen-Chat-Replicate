@@ -1658,9 +1658,25 @@ ${safeCode}
 
     async function copyToClipboard(text) {
         if (!text) return false;
+        if (navigator.clipboard?.writeText) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch {
+                // Fallback below.
+            }
+        }
         try {
-            await navigator.clipboard.writeText(text);
-            return true;
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            const success = document.execCommand('copy');
+            document.body.removeChild(textarea);
+            return success;
         } catch {
             return false;
         }
@@ -4368,6 +4384,30 @@ ${safeCode}
         });
     }
 
+    if (messagesContainer) {
+        messagesContainer.addEventListener('click', async (event) => {
+            const copyBtn = event.target.closest('.message-copy-btn');
+            if (!copyBtn) return;
+            event.preventDefault();
+            const messageDiv = copyBtn.closest('.message');
+            if (!messageDiv) return;
+            const rawText = messageDiv.dataset.rawContent || '';
+            if (!rawText) return;
+            const didCopy = await copyToClipboard(rawText);
+            const icon = copyBtn.querySelector('i');
+            if (icon) {
+                icon.className = didCopy ? 'ph ph-check' : 'ph ph-x';
+            }
+            copyBtn.classList.toggle('is-failed', !didCopy);
+            setTimeout(() => {
+                if (icon) {
+                    icon.className = 'ph ph-copy';
+                }
+                copyBtn.classList.remove('is-failed');
+            }, 1200);
+        });
+    }
+
         messagesContainer.addEventListener('click', (e) => {
         const toggle = e.target.closest('.thinking-toggle');
         if (!toggle) return;
@@ -4552,6 +4592,9 @@ ${safeCode}
         if (messageBubble) {
             renderMessageBubble(messageBubble, 'assistant', state.content || '');
         }
+        if (messageDiv && state.content !== undefined) {
+            messageDiv.dataset.rawContent = extractMessageText({ content: state.content });
+        }
 
         if (!thinkingBox) {
             return;
@@ -4636,6 +4679,11 @@ ${safeCode}
             messageDiv.innerHTML = `
                 ${avatarHtml}
                 <div class="message-content">
+                    <div class="message-actions">
+                        <button type="button" class="message-copy-btn" title="Copy message">
+                            <i class="ph ph-copy"></i>
+                        </button>
+                    </div>
                     <div class="thinking-block" hidden>
                         <button type="button" class="thinking-toggle" aria-expanded="false">
                             <span class="thinking-toggle-main">
@@ -4675,6 +4723,11 @@ ${safeCode}
             messageDiv.innerHTML = `
                 ${avatarHtml}
                 <div class="message-content">
+                    <div class="message-actions">
+                        <button type="button" class="message-copy-btn" title="Copy message">
+                            <i class="ph ph-copy"></i>
+                        </button>
+                    </div>
                     <div class="message-bubble"></div>
                 </div>
             `;
@@ -4682,6 +4735,7 @@ ${safeCode}
             messagesContainer.appendChild(messageDiv);
 
             renderMessageBubble(messageDiv.querySelector('.message-bubble'), 'user', content);
+            messageDiv.dataset.rawContent = extractMessageText({ content });
 
             chatArea.scrollTo({
                 top: chatArea.scrollHeight,
