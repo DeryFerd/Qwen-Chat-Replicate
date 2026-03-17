@@ -272,6 +272,51 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function tableToTSV(table) {
+        const rows = Array.from(table.querySelectorAll('tr'));
+        return rows.map(row => {
+            const cells = Array.from(row.querySelectorAll('th, td'));
+            return cells.map(cell => {
+                const raw = (cell.innerText || cell.textContent || '').replace(/\r?\n/g, ' ').trim();
+                const value = raw.replace(/\t/g, ' ');
+                if (/[\"\t\n]/.test(value)) {
+                    return `"${value.replace(/\"/g, '""')}"`;
+                }
+                return value;
+            }).join('\t');
+        }).join('\n');
+    }
+
+    function ensureTableCopyButtons(container) {
+        container.querySelectorAll('table').forEach(table => {
+            const existingWrapper = table.closest('.table-block');
+            const wrapper = existingWrapper || document.createElement('div');
+            if (!existingWrapper) {
+                wrapper.className = 'table-block';
+                table.parentNode?.insertBefore(wrapper, table);
+                wrapper.appendChild(table);
+            }
+
+            if (wrapper.querySelector('.table-copy-btn')) return;
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'table-copy-btn';
+            button.textContent = 'Copy table';
+            button.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const tsv = tableToTSV(table);
+                const didCopy = await copyToClipboard(tsv);
+                button.textContent = didCopy ? 'Copied' : 'Failed';
+                setTimeout(() => {
+                    button.textContent = 'Copy table';
+                }, 1200);
+            });
+
+            wrapper.appendChild(button);
+        });
+    }
+
     function wrapMathBlocks(container) {
         container.querySelectorAll('.katex-display').forEach(display => {
             if (display.parentElement?.classList.contains('math-block')) return;
@@ -950,6 +995,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function enhanceMarkdown(container) {
         ensureLinkTargets(container);
         ensureCopyButtons(container);
+        ensureTableCopyButtons(container);
         renderMermaid(container);
         renderMath(container);
     }
@@ -4679,11 +4725,6 @@ ${safeCode}
             messageDiv.innerHTML = `
                 ${avatarHtml}
                 <div class="message-content">
-                    <div class="message-actions">
-                        <button type="button" class="message-copy-btn" title="Copy message">
-                            <i class="ph ph-copy"></i>
-                        </button>
-                    </div>
                     <div class="thinking-block" hidden>
                         <button type="button" class="thinking-toggle" aria-expanded="false">
                             <span class="thinking-toggle-main">
@@ -4698,6 +4739,11 @@ ${safeCode}
                     </div>
                     <div class="tool-activity" hidden></div>
                     <div class="message-bubble"></div>
+                    <div class="message-actions">
+                        <button type="button" class="message-copy-btn" title="Copy message">
+                            <i class="ph ph-copy"></i>
+                        </button>
+                    </div>
                 </div>
             `;
 
@@ -4723,12 +4769,12 @@ ${safeCode}
             messageDiv.innerHTML = `
                 ${avatarHtml}
                 <div class="message-content">
+                    <div class="message-bubble"></div>
                     <div class="message-actions">
                         <button type="button" class="message-copy-btn" title="Copy message">
                             <i class="ph ph-copy"></i>
                         </button>
                     </div>
-                    <div class="message-bubble"></div>
                 </div>
             `;
 

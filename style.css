@@ -937,6 +937,7 @@ ul {
 .message-actions {
     display: flex;
     justify-content: flex-end;
+    align-self: flex-end;
 }
 
 .message-copy-btn {
@@ -961,6 +962,29 @@ ul {
 .message-copy-btn.is-failed {
     color: var(--danger);
     border-color: var(--danger);
+}
+
+.table-block {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.table-copy-btn {
+    align-self: flex-end;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-surface);
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.table-copy-btn:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-surface-hover);
 }
 
 .message-content.has-mermaid {
