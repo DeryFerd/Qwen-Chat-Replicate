@@ -302,18 +302,25 @@ document.addEventListener('DOMContentLoaded', () => {
             const button = document.createElement('button');
             button.type = 'button';
             button.className = 'table-copy-btn';
-            button.textContent = 'Copy table';
+            button.innerHTML = '<i class="ph ph-copy"></i>';
             button.addEventListener('click', async (e) => {
                 e.preventDefault();
                 const tsv = tableToTSV(table);
                 const didCopy = await copyToClipboard(tsv);
-                button.textContent = didCopy ? 'Copied' : 'Failed';
+                const icon = button.querySelector('i');
+                if (icon) {
+                    icon.className = didCopy ? 'ph ph-check' : 'ph ph-x';
+                }
+                button.classList.toggle('is-failed', !didCopy);
                 setTimeout(() => {
-                    button.textContent = 'Copy table';
+                    if (icon) {
+                        icon.className = 'ph ph-copy';
+                    }
+                    button.classList.remove('is-failed');
                 }, 1200);
             });
 
-            wrapper.appendChild(button);
+            table.parentNode?.insertBefore(button, table);
         });
     }
 

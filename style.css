@@ -969,27 +969,37 @@ ul {
     flex-direction: column;
     gap: 6px;
     position: relative;
-    padding-top: 32px;
+    padding-top: 0;
 }
 
 .table-copy-btn {
     position: absolute;
-    top: 6px;
-    right: 6px;
-    padding: 6px 10px;
-    border-radius: var(--radius-sm);
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     background-color: var(--bg-surface);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: 14px;
     cursor: pointer;
     transition: all var(--transition);
     z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .table-copy-btn:hover {
     color: var(--text-primary);
     background-color: var(--bg-surface-hover);
+}
+
+.table-copy-btn.is-failed {
+    color: var(--danger);
+    border-color: var(--danger);
 }
 
 .message-content.has-mermaid {
