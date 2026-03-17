@@ -964,6 +964,10 @@ ul {
     border-color: var(--danger);
 }
 
+.message.assistant[data-finalized="false"] .message-copy-btn {
+    display: none;
+}
+
 .table-block {
     display: flex;
     flex-direction: column;

@@ -4787,6 +4787,13 @@ ${safeCode}
                 messageDiv.dataset.finalized = state.finalized ? 'true' : 'false';
             }
         }
+        if (messageDiv) {
+            const copyBtn = messageDiv.querySelector('.message-copy-btn');
+            if (copyBtn) {
+                const isFinalized = state.finalized === true || messageDiv.dataset.finalized === 'true';
+                copyBtn.hidden = !isFinalized;
+            }
+        }
 
         if (messageBubble) {
             renderMessageBubble(messageBubble, 'assistant', state.content || '');
@@ -4893,13 +4900,16 @@ ${safeCode}
                     <div class="tool-activity" hidden></div>
                     <div class="message-bubble"></div>
                     <div class="message-actions">
-                        <button type="button" class="message-copy-btn" title="Copy message">
+                        <button type="button" class="message-copy-btn" title="Copy message" ${messageData.finalized === false ? 'hidden' : ''}>
                             <i class="ph ph-copy"></i>
                         </button>
                     </div>
                 </div>
             `;
 
+            if (messageData.finalized === false) {
+                messageDiv.dataset.finalized = 'false';
+            }
             messagesContainer.appendChild(messageDiv);
 
             updateAssistantMessageState(messageDiv, {
