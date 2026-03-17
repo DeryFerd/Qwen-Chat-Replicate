@@ -114,6 +114,36 @@ document.addEventListener('DOMContentLoaded', () => {
         'echarts.init',
         'vega.embed'
     ];
+    const TOOL_META = {
+        web_search: {
+            icon: 'ph-globe',
+            label: 'Web Search',
+            pendingText: (query) => query ? `Searching for "${query}"…` : 'Searching the web…',
+            doneText: (query, count) => query ? `Searched for "${query}"` : 'Web search complete',
+            color: '#6366f1'
+        },
+        code_runner: {
+            icon: 'ph-terminal',
+            label: 'Code Runner',
+            pendingText: () => 'Running code…',
+            doneText: () => 'Code executed',
+            color: '#22c55e'
+        },
+        calculator: {
+            icon: 'ph-calculator',
+            label: 'Calculator',
+            pendingText: (expr) => expr ? `Calculating ${expr}…` : 'Calculating…',
+            doneText: (expr, result) => result ? `Result: ${result}` : 'Calculated',
+            color: '#f59e0b'
+        },
+        datetime: {
+            icon: 'ph-clock',
+            label: 'Date & Time',
+            pendingText: () => 'Getting current time…',
+            doneText: (_, result) => result || 'Got current time',
+            color: '#06b6d4'
+        }
+    };
 
     // --- state management ---
     let chats = JSON.parse(localStorage.getItem('qwen_chats') || '[]');
@@ -2476,6 +2506,139 @@ ${safeCode}
         return true;
     }
 
+    const toolActivityMap = new WeakMap();
+
+    function getToolActivityState(messageDiv) {
+        if (!toolActivityMap.has(messageDiv)) {
+            toolActivityMap.set(messageDiv, {
+                steps: [],
+                expanded: false
+            });
+        }
+        return toolActivityMap.get(messageDiv);
+    }
+
+    function pushToolStep(messageDiv, toolName, query = '') {
+        const state = getToolActivityState(messageDiv);
+        const existing = state.steps.find(step => step.toolName === toolName && step.status === 'pending' && step.query === query);
+        if (existing) return;
+        state.steps.push({
+            toolName,
+            query,
+            status: 'pending',
+            result: null,
+            id: `${toolName}-${Date.now()}`
+        });
+        renderToolActivityUI(messageDiv);
+    }
+
+    function resolveToolStep(messageDiv, toolName, query = '', result = null, error = false) {
+        const state = getToolActivityState(messageDiv);
+        const step = state.steps.find(step => step.toolName === toolName && step.status === 'pending');
+        if (step) {
+            step.status = error ? 'error' : 'done';
+            step.result = result;
+            step.query = query || step.query;
+        }
+        renderToolActivityUI(messageDiv);
+    }
+
+    function renderToolActivityUI(messageDiv) {
+        if (!messageDiv) return;
+        const activity = messageDiv.querySelector('.tool-activity');
+        if (!activity) return;
+        const state = getToolActivityState(messageDiv);
+        if (!state.steps.length) {
+            activity.hidden = true;
+            return;
+        }
+        activity.hidden = false;
+        activity.innerHTML = '';
+        activity.className = 'tool-activity tool-activity-v2';
+
+        const stepsContainer = document.createElement('div');
+        stepsContainer.className = 'tool-steps';
+
+        state.steps.forEach(step => {
+            const meta = TOOL_META[step.toolName] || {
+                icon: 'ph-gear',
+                label: step.toolName,
+                pendingText: () => `Using ${step.toolName}…`,
+                doneText: () => `Used ${step.toolName}`,
+                color: '#94A3B8'
+            };
+
+            const row = document.createElement('div');
+            row.className = `tool-step tool-step-${step.status}`;
+            row.dataset.toolName = step.toolName;
+
+            const iconWrap = document.createElement('span');
+            iconWrap.className = 'tool-step-icon';
+            iconWrap.style.setProperty('--tool-color', meta.color);
+
+            if (step.status === 'pending') {
+                iconWrap.innerHTML = '<span class="tool-step-spinner"></span>';
+            } else if (step.status === 'done') {
+                iconWrap.innerHTML = `<i class="ph ph-check-circle" style="color: ${meta.color}"></i>`;
+            } else {
+                iconWrap.innerHTML = '<i class="ph ph-x-circle" style="color: #ef4444"></i>';
+            }
+
+            const label = document.createElement('span');
+            label.className = 'tool-step-label';
+
+            if (step.status === 'pending') {
+                label.textContent = meta.pendingText(step.query);
+                label.classList.add('is-pending');
+            } else {
+                label.textContent = meta.doneText(step.query, step.result);
+            }
+
+            row.appendChild(iconWrap);
+            row.appendChild(label);
+            stepsContainer.appendChild(row);
+        });
+
+        activity.appendChild(stepsContainer);
+
+        const webSearchStep = state.steps.find(step => step.toolName === 'web_search' && step.status === 'done' && step.result?.length);
+        if (webSearchStep) {
+            const sourcesWrap = document.createElement('div');
+            sourcesWrap.className = 'tool-sources-wrap';
+
+            const toggleBtn = document.createElement('button');
+            toggleBtn.type = 'button';
+            toggleBtn.className = 'tool-sources-toggle';
+            toggleBtn.textContent = state.expanded ? 'Hide sources' : `Show ${webSearchStep.result.length} sources`;
+            toggleBtn.addEventListener('click', () => {
+                state.expanded = !state.expanded;
+                renderToolActivityUI(messageDiv);
+            });
+            sourcesWrap.appendChild(toggleBtn);
+
+            if (state.expanded) {
+                const row = document.createElement('div');
+                row.className = 'sources-row';
+                webSearchStep.result.forEach(source => {
+                    const domain = extractDomain(source.url || '');
+                    const card = document.createElement('a');
+                    card.className = 'source-card';
+                    card.href = source.url || '#';
+                    card.target = '_blank';
+                    card.rel = 'noopener noreferrer';
+                    card.innerHTML = `
+                        <img class="source-favicon" src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=16" alt="">
+                        <div class="source-title">${escapeHtml(truncateText(source.title || '', 55))}</div>
+                        <div class="source-domain">${escapeHtml(domain)}</div>
+                    `;
+                    row.appendChild(card);
+                });
+                sourcesWrap.appendChild(row);
+            }
+            activity.appendChild(sourcesWrap);
+        }
+    }
+
     function syncWebSearchActivity(messageDiv, assistantIndex, fallbackText = '', fallbackCount = 0) {
         if (!messageDiv) return false;
         const summary = typeof assistantIndex === 'number'
@@ -2521,7 +2684,7 @@ ${safeCode}
         return false;
     }
 
-    function updateToolActivity(messageDiv, text, count = 0, options = {}) {
+    function updateToolActivityLegacy(messageDiv, text, count = 0, options = {}) {
         if (!messageDiv) return;
         const activity = messageDiv.querySelector('.tool-activity');
         if (!activity) return;
@@ -2625,6 +2788,15 @@ ${safeCode}
             const existingRow = messageDiv.querySelector('.sources-row');
             if (existingRow) existingRow.remove();
         }
+    }
+
+    function updateToolActivity(messageDiv, text, count = 0, options = {}) {
+        const state = messageDiv ? toolActivityMap.get(messageDiv) : null;
+        if (state && state.steps.length) {
+            renderToolActivityUI(messageDiv);
+            return;
+        }
+        updateToolActivityLegacy(messageDiv, text, count, options);
     }
 
     // Sidebar Toggle
@@ -4093,6 +4265,7 @@ ${safeCode}
                 updateToolActivity(assistantMessage, '');
             }
 
+            renderToolActivityUI(assistantMessage);
             attachArtifactButtons(assistantMessage);
             autoOpenVizArtifact(assistantMessage);
             collapseArtifactBlocks(assistantMessage);
@@ -4178,71 +4351,41 @@ ${safeCode}
 
                         if (thinkingToken && !isToolMessage && enableThinking) fullThinking += thinkingToken;
                         if (contentToken && !isToolMessage) fullReply += contentToken;
+                        if (Array.isArray(toolCalls) && toolCalls.length) {
+                            toolCalls.forEach(call => {
+                                if (call?.function?.name) {
+                                    let query = '';
+                                    try {
+                                        const args = typeof call.function.arguments === 'string'
+                                            ? JSON.parse(call.function.arguments)
+                                            : call.function.arguments;
+                                        query = args?.query || args?.expression || args?.url || '';
+                                    } catch {
+                                        query = '';
+                                    }
+                                    pushToolStep(assistantMessage, call.function.name, query);
+                                }
+                            });
+                        }
+
                         if (toolName) {
+                            let resultData = null;
+                            let queryFromResult = '';
+                            try {
+                                const parsedResult = JSON.parse(parsed?.message?.content || '{}');
+                                resultData = parsedResult.results || parsedResult.result || parsedResult.output || null;
+                                queryFromResult = parsedResult.query || '';
+                            } catch {
+                                resultData = null;
+                            }
+
                             pendingToolMessages.push({
                                 role: 'tool',
                                 tool_name: toolName,
                                 content: parsed?.message?.content || ''
                             });
-                        }
 
-                        if (Array.isArray(toolCalls) && toolCalls.length) {
-                            const searchCall = toolCalls.find(call => call?.function?.name === 'web_search');
-                            if (searchCall) {
-                                assistantMessage.dataset.webSearchUsed = 'true';
-                                webSearchCount += 1;
-                                assistantMessage.dataset.webSearchCount = String(webSearchCount);
-
-                                let query = '';
-                                try {
-                                    const args = typeof searchCall.function.arguments === 'string'
-                                        ? JSON.parse(searchCall.function.arguments)
-                                        : searchCall.function.arguments;
-                                    query = args?.query || '';
-                                } catch {
-                                    query = '';
-                                }
-
-                                const searchText = query
-                                    ? `Searching the web for "${query}"...`
-                                    : 'Searching the web...';
-                                assistantMessage.dataset.webSearchLastText = searchText;
-                                updateToolActivity(assistantMessage, searchText, webSearchCount, { interactive: true });
-                            }
-                        }
-
-                        if (toolName === 'web_search') {
-                            const lastSearch = pendingToolMessages
-                                .filter(message => message.tool_name === 'web_search')
-                                .slice(-1)[0];
-                            let doneQuery = '';
-                            try {
-                                const parsedSearch = JSON.parse(lastSearch?.content || '{}');
-                                doneQuery = parsedSearch?.query || '';
-                            } catch {
-                                doneQuery = '';
-                            }
-
-                            const completedText = doneQuery
-                                ? `Searched the web for "${doneQuery}"`
-                                : 'Web search complete';
-                            const sourceResults = parseToolResults(lastSearch);
-                            assistantMessage.dataset.webSearchUsed = 'true';
-                            assistantMessage.dataset.webSearchLastText = completedText;
-                            assistantMessage.dataset.webSearchCount = String(webSearchCount);
-                            updateToolActivity(assistantMessage, completedText, webSearchCount, {
-                                interactive: true,
-                                sources: sourceResults
-                            });
-                            if (sourceResults.length) {
-                                assistantMessage.dataset.webSearchSources = JSON.stringify(sourceResults);
-                                renderSourcesRow(assistantMessage, sourceResults, true);
-                                const activity = assistantMessage.querySelector('.tool-activity');
-                                if (activity) {
-                                    activity.dataset.expanded = 'true';
-                                    activity.classList.add('is-open');
-                                }
-                            }
+                            resolveToolStep(assistantMessage, toolName, queryFromResult, resultData);
                         }
 
                         updateAssistantMessageState(assistantMessage, {

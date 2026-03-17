@@ -1659,6 +1659,102 @@ ul {
     margin-left: 4px;
 }
 
+/* Tool Activity V2 */
+.tool-activity-v2 {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    width: fit-content;
+    min-width: 220px;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tool-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tool-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    animation: toolStepIn 0.2s ease-out;
+}
+
+@keyframes toolStepIn {
+    from { opacity: 0; transform: translateX(-6px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+.tool-step-done .tool-step-label {
+    color: var(--text-primary);
+}
+
+.tool-step-error .tool-step-label {
+    color: #ef4444;
+}
+
+.tool-step-icon {
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 16px;
+}
+
+.tool-step-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--tool-color, var(--accent));
+    border-radius: 50%;
+    display: inline-block;
+    animation: toolSpin 0.7s linear infinite;
+}
+
+@keyframes toolSpin {
+    to { transform: rotate(360deg); }
+}
+
+.tool-step-label.is-pending {
+    animation: toolLabelPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes toolLabelPulse {
+    0%, 100% { opacity: 0.6; }
+    50% { opacity: 1; }
+}
+
+.tool-sources-wrap {
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tool-sources-toggle {
+    font-size: 12px;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-align: left;
+}
+
+.tool-sources-toggle:hover {
+    text-decoration: underline;
+}
+
 .sources-row::-webkit-scrollbar {
     display: none;
 }
