@@ -114,6 +114,86 @@ document.addEventListener('DOMContentLoaded', () => {
         'echarts.init',
         'vega.embed'
     ];
+    const FRONTEND_TOOLS = {
+        calculator: {
+            description: 'Evaluate a mathematical expression and return the numeric result.',
+            parameters: { expression: 'string - the math expression to evaluate, e.g. "2^10 + sqrt(144)"' },
+            execute(args) {
+                const expr = String(args?.expression || '').trim();
+                if (!expr) return { error: 'No expression provided' };
+                try {
+                    const sanitized = expr.replace(/[^0-9+\-*/().,%^ ]/g, '');
+                    const result = Function('"use strict"; return (' + sanitized + ')')();
+                    return { expression: expr, result: String(result) };
+                } catch {
+                    return { expression: expr, error: 'Invalid expression' };
+                }
+            }
+        },
+        datetime: {
+            description: 'Get the current date, time, and timezone information.',
+            parameters: { timezone: 'string (optional) - IANA timezone name, e.g. "Asia/Jakarta"' },
+            execute(args) {
+                const tz = args?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+                const now = new Date();
+                return {
+                    iso: now.toISOString(),
+                    local: now.toLocaleString('en-US', { timeZone: tz, dateStyle: 'full', timeStyle: 'long' }),
+                    timezone: tz,
+                    unix: Math.floor(now.getTime() / 1000)
+                };
+            }
+        },
+        code_runner: {
+            description: 'Execute JavaScript code in a sandboxed iframe and return the console output.',
+            parameters: {
+                code: 'string - valid JavaScript code to execute',
+                language: 'string - must always be "javascript"'
+            },
+            execute(args) {
+                return new Promise((resolve) => {
+                    const code = String(args?.code || '');
+                    if (!code) return resolve({ error: 'No code provided', output: '' });
+
+                    const iframe = document.createElement('iframe');
+                    iframe.sandbox = 'allow-scripts';
+                    iframe.style.display = 'none';
+                    document.body.appendChild(iframe);
+
+                    const timeout = setTimeout(() => {
+                        iframe.remove();
+                        resolve({ output: '', error: 'Execution timed out (5s)' });
+                    }, 5000);
+
+                    window.addEventListener('message', function handler(event) {
+                        if (event.data?.type === 'qwen-runner-result') {
+                            clearTimeout(timeout);
+                            window.removeEventListener('message', handler);
+                            iframe.remove();
+                            resolve({
+                                output: event.data.output || '',
+                                error: event.data.error || null
+                            });
+                        }
+                    });
+
+                    const runnerCode = `
+                        const logs = [];
+                        console.log = (...args) => logs.push(args.map(String).join(' '));
+                        console.error = (...args) => logs.push('[error] ' + args.map(String).join(' '));
+                        console.warn = (...args) => logs.push('[warn] ' + args.map(String).join(' '));
+                        try {
+                            ${code}
+                            parent.postMessage({ type: 'qwen-runner-result', output: logs.join('\\n'), error: null }, '*');
+                        } catch(e) {
+                            parent.postMessage({ type: 'qwen-runner-result', output: logs.join('\\n'), error: e.message }, '*');
+                        }
+                    `;
+                    iframe.srcdoc = '<script>' + runnerCode + '<\\/script>';
+                });
+            }
+        }
+    };
     const TOOL_META = {
         web_search: {
             icon: 'ph-globe',
@@ -144,6 +224,36 @@ document.addEventListener('DOMContentLoaded', () => {
             color: '#06b6d4'
         }
     };
+
+    if (typeof TOOL_META === 'object' && TOOL_META) {
+        if (!TOOL_META.calculator) {
+            TOOL_META.calculator = {
+                icon: 'ph-calculator',
+                label: 'Calculator',
+                pendingText: (expr) => expr ? `Calculating "${expr}"...` : 'Calculating...',
+                doneText: (_, result) => result ? `Result: ${result}` : 'Calculated',
+                color: '#f59e0b'
+            };
+        }
+        if (!TOOL_META.datetime) {
+            TOOL_META.datetime = {
+                icon: 'ph-clock',
+                label: 'Date & Time',
+                pendingText: () => 'Getting current time...',
+                doneText: (_, result) => result || 'Got current time',
+                color: '#06b6d4'
+            };
+        }
+        if (!TOOL_META.code_runner) {
+            TOOL_META.code_runner = {
+                icon: 'ph-terminal',
+                label: 'Code Runner',
+                pendingText: (code) => code ? `Running: ${String(code).slice(0, 40)}...` : 'Running code...',
+                doneText: (_, output) => output ? `Output: ${String(output).slice(0, 60)}` : 'Code executed',
+                color: '#22c55e'
+            };
+        }
+    }
 
     // --- state management ---
     let chats = JSON.parse(localStorage.getItem('qwen_chats') || '[]');
@@ -3617,6 +3727,14 @@ ${safeCode}
         if (memoryBlock) {
             systemMessages.push({ role: 'system', content: memoryBlock });
         }
+        const frontendToolsInstruction = `You have access to these client-side tools in addition to web_search. Call them using the same function call format:
+
+- calculator(expression: string) - evaluate math. Use for any arithmetic, algebra, or numeric computation. Example: calculator("(2^10 + sqrt(144)) / 3")
+- datetime(timezone?: string) - get current date and time. Use when the user asks about the current time or date. Example: datetime("Asia/Jakarta")
+- code_runner(code: string, language: string) - run JavaScript code and return console output. Always set language to "javascript". Use when the user asks to run, test, or execute code. Example: code_runner("console.log([1,2,3].map(x => x * 2))", "javascript")
+
+Always prefer these tools over guessing answers when they apply.`;
+        systemMessages.push({ role: 'system', content: frontendToolsInstruction });
         if (systemMessages.length) {
             return [...systemMessages, ...messages];
         }
@@ -4377,6 +4495,62 @@ ${safeCode}
                                 queryFromResult = parsedResult.query || '';
                             } catch {
                                 resultData = null;
+                            }
+
+                            if (toolName && FRONTEND_TOOLS[toolName]) {
+                                // Parse tool arguments from the streamed message
+                                let toolArgs = {};
+                                try {
+                                    const rawArgs = parsed?.message?.arguments || parsed?.message?.content || '{}';
+                                    toolArgs = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
+                                } catch {
+                                    toolArgs = {};
+                                }
+
+                                // Show pending state in tool activity
+                                const pendingQuery = toolArgs?.expression || toolArgs?.code?.slice(0, 60) || toolArgs?.timezone || '';
+                                if (typeof pushToolStep === 'function') {
+                                    pushToolStep(assistantMessage, toolName, pendingQuery);
+                                } else {
+                                    updateToolActivity(assistantMessage, `Running ${toolName}...`);
+                                }
+
+                                // Execute the frontend tool asynchronously
+                                Promise.resolve(FRONTEND_TOOLS[toolName].execute(toolArgs)).then(result => {
+                                    const resultJson = JSON.stringify(result);
+
+                                    // Resolve the tool step visual
+                                    const resolvedDisplay = result?.result || result?.output || result?.local || null;
+                                    if (typeof resolveToolStep === 'function') {
+                                        resolveToolStep(assistantMessage, toolName, pendingQuery, resolvedDisplay);
+                                    } else {
+                                        const fallbackText = resolvedDisplay
+                                            ? `${toolName}: ${resolvedDisplay}`
+                                            : `${toolName} done`;
+                                        updateToolActivity(assistantMessage, fallbackText);
+                                    }
+
+                                    // Inject the result back as a tool message so the AI can use it
+                                    pendingToolMessages.push({
+                                        role: 'tool',
+                                        tool_name: toolName,
+                                        content: resultJson
+                                    });
+
+                                    // For code_runner: open output in artifact panel if there is output
+                                    if (toolName === 'code_runner' && (result?.output || result?.error)) {
+                                        const displayOutput = [
+                                            result.output ? `// Output:\n${result.output}` : '',
+                                            result.error ? `// Error:\n${result.error}` : ''
+                                        ].filter(Boolean).join('\n\n');
+
+                                        if (displayOutput && typeof openArtifactFromCode === 'function') {
+                                            openArtifactFromCode(displayOutput, 'javascript');
+                                        }
+                                    }
+                                });
+
+                                continue; // Skip the normal pendingToolMessages.push below - handled above
                             }
 
                             pendingToolMessages.push({
