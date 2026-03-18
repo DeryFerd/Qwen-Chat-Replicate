@@ -4351,6 +4351,9 @@ Always prefer these tools over guessing answers when they apply.`;
         let didFinalize = false;
         const pendingToolMessages = [];
         let webSearchCount = 0;
+        const pendingFrontendToolCalls = [];
+        const frontendToolCallKeys = new Set();
+        let frontendToolRound = 0;
 
         const finalizeAssistantMessage = ({ aborted } = {}) => {
             if (didFinalize) return;
@@ -4407,6 +4410,242 @@ Always prefer these tools over guessing answers when they apply.`;
                 messages: buildRequestMessages(),
                 stream: true,
                 ...(supportsThinking ? { think: enableThinking } : {})
+            };
+
+            const runFrontendToolsAndContinue = async () => {
+                if (!pendingFrontendToolCalls.length) return;
+                frontendToolRound = 1;
+
+                const toolCallsPayload = pendingFrontendToolCalls.map(entry => entry.call);
+
+                for (const entry of pendingFrontendToolCalls) {
+                    const toolName = entry?.call?.function?.name;
+                    if (!toolName || !FRONTEND_TOOLS[toolName]) continue;
+                    const toolArgs = entry?.args || {};
+                    const pendingQuery = toolArgs?.expression || toolArgs?.code?.slice(0, 60) || toolArgs?.timezone || '';
+                    let result = null;
+                    try {
+                        result = await FRONTEND_TOOLS[toolName].execute(toolArgs);
+                    } catch (err) {
+                        result = { error: err?.message || 'Execution failed', output: '' };
+                    }
+
+                    const resolvedDisplay = result?.result || result?.output || result?.local || null;
+                    if (typeof resolveToolStep === 'function') {
+                        resolveToolStep(assistantMessage, toolName, pendingQuery, resolvedDisplay);
+                    } else {
+                        const fallbackText = resolvedDisplay
+                            ? `${toolName}: ${resolvedDisplay}`
+                            : `${toolName} done`;
+                        updateToolActivity(assistantMessage, fallbackText);
+                    }
+
+                    pendingToolMessages.push({
+                        role: 'tool',
+                        tool_name: toolName,
+                        content: JSON.stringify(result)
+                    });
+
+                    if (toolName === 'code_runner' && (result?.output || result?.error)) {
+                        const displayOutput = [
+                            result.output ? `// Output:\n${result.output}` : '',
+                            result.error ? `// Error:\n${result.error}` : ''
+                        ].filter(Boolean).join('\n\n');
+
+                        if (displayOutput && typeof openArtifactFromCode === 'function') {
+                            openArtifactFromCode(displayOutput, 'javascript');
+                        }
+                    }
+                }
+
+                const continuationPayload = {
+                    model: getSelectedModel(),
+                    messages: [
+                        ...buildRequestMessages(),
+                        { role: 'assistant', content: '', tool_calls: toolCallsPayload },
+                        ...pendingToolMessages
+                    ],
+                    stream: true,
+                    ...(supportsThinking ? { think: enableThinking } : {})
+                };
+
+                const followResponse = await fetch(CHAT_API_URL, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(continuationPayload),
+                    signal: controller.signal
+                });
+
+                if (!followResponse.ok) {
+                    let errorMsg = `HTTP ${followResponse.status}`;
+                    try {
+                        const errorPayload = await followResponse.json();
+                        errorMsg = errorPayload.error || errorMsg;
+                    } catch {
+                        const fallbackText = await followResponse.text();
+                        if (fallbackText) errorMsg = fallbackText;
+                    }
+                    throw new Error(errorMsg);
+                }
+
+                const followContentType = followResponse.headers.get('content-type') || '';
+                if (followContentType.includes('application/json')) {
+                    const payload = await followResponse.json();
+                    fullReply += payload?.message?.content || payload?.response || '';
+                    fullThinking += enableThinking ? (payload?.message?.thinking || payload?.thinking || '') : '';
+                    return;
+                }
+
+                if (!followResponse.body) {
+                    throw new Error('Response stream tidak tersedia dari server proxy.');
+                }
+
+                const followReader = followResponse.body.getReader();
+                const followDecoder = new TextDecoder();
+                let followPending = '';
+
+                while (true) {
+                    const { done, value } = await followReader.read();
+                    if (done) break;
+
+                    followPending += followDecoder.decode(value, { stream: true });
+                    const lines = followPending.split('\n');
+                    followPending = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+
+                        try {
+                            const parsed = JSON.parse(line);
+                            const thinkingToken = parsed?.message?.thinking || '';
+                            const contentToken = parsed?.message?.content || '';
+                            const toolName = parsed?.message?.tool_name || parsed?.message?.name;
+                            const role = parsed?.message?.role;
+                            const toolCalls = parsed?.message?.tool_calls;
+                            const isToolMessage = role === 'tool' || Boolean(toolName);
+
+                            if (thinkingToken && !isToolMessage && enableThinking) fullThinking += thinkingToken;
+                            if (contentToken && !isToolMessage) fullReply += contentToken;
+                            if (Array.isArray(toolCalls) && toolCalls.length) {
+                                toolCalls.forEach(call => {
+                                    const callName = call?.function?.name;
+                                    if (callName) {
+                                        let query = '';
+                                        try {
+                                            const args = typeof call.function.arguments === 'string'
+                                                ? JSON.parse(call.function.arguments)
+                                                : call.function.arguments;
+                                            query = args?.query || args?.expression || args?.url || args?.code || args?.timezone || '';
+                                        } catch {
+                                            query = '';
+                                        }
+                                        pushToolStep(assistantMessage, callName, query);
+                                    }
+                                });
+                            }
+
+                            if (toolName) {
+                                let resultData = null;
+                                let queryFromResult = '';
+                                try {
+                                    const parsedResult = JSON.parse(parsed?.message?.content || '{}');
+                                    resultData = parsedResult.results || parsedResult.result || parsedResult.output || null;
+                                    queryFromResult = parsedResult.query || '';
+                                } catch {
+                                    resultData = null;
+                                }
+
+                                if (toolName && FRONTEND_TOOLS[toolName]) {
+                                    // Parse tool arguments from the streamed message
+                                    let toolArgs = {};
+                                    try {
+                                        const rawArgs = parsed?.message?.arguments || parsed?.message?.content || '{}';
+                                        toolArgs = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
+                                    } catch {
+                                        toolArgs = {};
+                                    }
+
+                                    // Show pending state in tool activity
+                                    const pendingQuery = toolArgs?.expression || toolArgs?.code?.slice(0, 60) || toolArgs?.timezone || '';
+                                    if (typeof pushToolStep === 'function') {
+                                        pushToolStep(assistantMessage, toolName, pendingQuery);
+                                    } else {
+                                        updateToolActivity(assistantMessage, `Running ${toolName}...`);
+                                    }
+
+                                    // Execute the frontend tool asynchronously
+                                    Promise.resolve(FRONTEND_TOOLS[toolName].execute(toolArgs)).then(result => {
+                                        const resultJson = JSON.stringify(result);
+
+                                        // Resolve the tool step visual
+                                        const resolvedDisplay = result?.result || result?.output || result?.local || null;
+                                        if (typeof resolveToolStep === 'function') {
+                                            resolveToolStep(assistantMessage, toolName, pendingQuery, resolvedDisplay);
+                                        } else {
+                                            const fallbackText = resolvedDisplay
+                                                ? `${toolName}: ${resolvedDisplay}`
+                                                : `${toolName} done`;
+                                            updateToolActivity(assistantMessage, fallbackText);
+                                        }
+
+                                        // Inject the result back as a tool message so the AI can use it
+                                        pendingToolMessages.push({
+                                            role: 'tool',
+                                            tool_name: toolName,
+                                            content: resultJson
+                                        });
+
+                                        // For code_runner: open output in artifact panel if there is output
+                                        if (toolName === 'code_runner' && (result?.output || result?.error)) {
+                                            const displayOutput = [
+                                                result.output ? `// Output:\n${result.output}` : '',
+                                                result.error ? `// Error:\n${result.error}` : ''
+                                            ].filter(Boolean).join('\n\n');
+
+                                            if (displayOutput && typeof openArtifactFromCode === 'function') {
+                                                openArtifactFromCode(displayOutput, 'javascript');
+                                            }
+                                        }
+                                    });
+
+                                    continue; // Skip the normal pendingToolMessages.push below - handled above
+                                }
+
+                                pendingToolMessages.push({
+                                    role: 'tool',
+                                    tool_name: toolName,
+                                    content: parsed?.message?.content || ''
+                                });
+
+                                resolveToolStep(assistantMessage, toolName, queryFromResult, resultData);
+                            }
+
+                            updateAssistantMessageState(assistantMessage, {
+                                content: fullReply,
+                                thinking: enableThinking ? fullThinking : '',
+                                pendingThinking: enableThinking,
+                                forceThinking: enableThinking,
+                                finalized: false
+                            });
+                        } catch {
+                            // Ignore keep-alive or incomplete lines.
+                        }
+                    }
+                }
+
+                followPending += followDecoder.decode();
+                if (followPending.trim()) {
+                    try {
+                        const parsed = JSON.parse(followPending);
+                        const thinkingToken = parsed?.message?.thinking || '';
+                        const contentToken = parsed?.message?.content || '';
+
+                        if (thinkingToken && enableThinking) fullThinking += thinkingToken;
+                        if (contentToken) fullReply += contentToken;
+                    } catch {
+                        // Ignore trailing non-JSON content.
+                    }
+                }
             };
 
             const response = await fetch(CHAT_API_URL, {
@@ -4471,17 +4710,27 @@ Always prefer these tools over guessing answers when they apply.`;
                         if (contentToken && !isToolMessage) fullReply += contentToken;
                         if (Array.isArray(toolCalls) && toolCalls.length) {
                             toolCalls.forEach(call => {
-                                if (call?.function?.name) {
+                                const callName = call?.function?.name;
+                                if (callName) {
                                     let query = '';
+                                    let args = {};
                                     try {
-                                        const args = typeof call.function.arguments === 'string'
+                                        args = typeof call.function.arguments === 'string'
                                             ? JSON.parse(call.function.arguments)
                                             : call.function.arguments;
-                                        query = args?.query || args?.expression || args?.url || '';
+                                        query = args?.query || args?.expression || args?.url || args?.code || args?.timezone || '';
                                     } catch {
                                         query = '';
+                                        args = {};
                                     }
-                                    pushToolStep(assistantMessage, call.function.name, query);
+                                    pushToolStep(assistantMessage, callName, query);
+                                    if (frontendToolRound === 0 && FRONTEND_TOOLS[callName]) {
+                                        const key = `${callName}:${JSON.stringify(args)}`;
+                                        if (!frontendToolCallKeys.has(key)) {
+                                            frontendToolCallKeys.add(key);
+                                            pendingFrontendToolCalls.push({ call, args });
+                                        }
+                                    }
                                 }
                             });
                         }
@@ -4587,6 +4836,10 @@ Always prefer these tools over guessing answers when they apply.`;
                 } catch {
                     // Ignore trailing non-JSON content.
                 }
+            }
+
+            if (pendingFrontendToolCalls.length) {
+                await runFrontendToolsAndContinue();
             }
 
             finalizeAssistantMessage();

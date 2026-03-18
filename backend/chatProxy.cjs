@@ -22,6 +22,72 @@ const WEB_SEARCH_TOOL = {
   }
 };
 
+const FRONTEND_TOOL_SCHEMAS = [
+  {
+    type: 'function',
+    function: {
+      name: 'calculator',
+      description: 'Evaluate a mathematical expression and return the numeric result.',
+      parameters: {
+        type: 'object',
+        required: ['expression'],
+        properties: {
+          expression: {
+            type: 'string',
+            description: 'The math expression to evaluate, e.g. "2^10 + sqrt(144)".'
+          }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'datetime',
+      description: 'Get the current date, time, and timezone information.',
+      parameters: {
+        type: 'object',
+        properties: {
+          timezone: {
+            type: 'string',
+            description: 'Optional IANA timezone name, e.g. "Asia/Jakarta".'
+          }
+        }
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'code_runner',
+      description: 'Execute JavaScript code in a sandboxed iframe and return the console output.',
+      parameters: {
+        type: 'object',
+        required: ['code', 'language'],
+        properties: {
+          code: {
+            type: 'string',
+            description: 'Valid JavaScript code to execute.'
+          },
+          language: {
+            type: 'string',
+            description: 'Must always be "javascript".'
+          }
+        }
+      }
+    }
+  }
+];
+
+const FRONTEND_TOOL_NAMES = new Set(FRONTEND_TOOL_SCHEMAS.map((tool) => tool.function.name));
+
+function buildToolsList(webSearchEnabled) {
+  if (webSearchEnabled) {
+    return [WEB_SEARCH_TOOL, ...FRONTEND_TOOL_SCHEMAS];
+  }
+  return [...FRONTEND_TOOL_SCHEMAS];
+}
+
 class HttpError extends Error {
   constructor(statusCode, message) {
     super(message);
@@ -219,9 +285,9 @@ async function executeToolCalls(toolCalls, tavilyApiKey) {
 }
 
 async function* createChatStream(payload, env, options = {}) {
-  const toolsEnabled = Boolean(env.TAVILY_API_KEY) && !options.disableWebSearch;
-  const tools = toolsEnabled ? [WEB_SEARCH_TOOL] : undefined;
-  let messages = buildMessages(payload.messages, toolsEnabled);
+  const webSearchEnabled = Boolean(env.TAVILY_API_KEY) && !options.disableWebSearch;
+  const tools = buildToolsList(webSearchEnabled);
+  let messages = buildMessages(payload.messages, webSearchEnabled);
 
   for (let step = 0; step < MAX_TOOL_ITERATIONS; step += 1) {
     const upstreamPayload = {
@@ -258,6 +324,24 @@ async function* createChatStream(payload, env, options = {}) {
       return;
     }
 
+    const hasFrontendTools = streamState.toolCalls.some((toolCall) =>
+      FRONTEND_TOOL_NAMES.has(toolCall?.function?.name)
+    );
+
+    if (hasFrontendTools) {
+      const webSearchCalls = streamState.toolCalls.filter(
+        (toolCall) => toolCall?.function?.name === 'web_search'
+      );
+      if (webSearchCalls.length) {
+        const toolMessages = await executeToolCalls(webSearchCalls, env.TAVILY_API_KEY);
+        for (const toolMessage of toolMessages) {
+          yield `${JSON.stringify({ message: toolMessage })}\n`;
+        }
+        messages = [...messages, ...toolMessages];
+      }
+      return;
+    }
+
     const toolMessages = await executeToolCalls(streamState.toolCalls, env.TAVILY_API_KEY);
     for (const toolMessage of toolMessages) {
       yield `${JSON.stringify({ message: toolMessage })}\n`;
@@ -269,9 +353,9 @@ async function* createChatStream(payload, env, options = {}) {
 }
 
 async function runChatJson(payload, env, options = {}) {
-  const toolsEnabled = Boolean(env.TAVILY_API_KEY) && !options.disableWebSearch;
-  const tools = toolsEnabled ? [WEB_SEARCH_TOOL] : undefined;
-  let messages = buildMessages(payload.messages, toolsEnabled);
+  const webSearchEnabled = Boolean(env.TAVILY_API_KEY) && !options.disableWebSearch;
+  const tools = buildToolsList(webSearchEnabled);
+  let messages = buildMessages(payload.messages, webSearchEnabled);
 
   for (let step = 0; step < MAX_TOOL_ITERATIONS; step += 1) {
     const upstreamPayload = {
@@ -341,3 +425,12 @@ module.exports = {
   WEB_SEARCH_TOOL,
   handleChatPayload
 };
+
+
+
+
+
+
+
+
+
