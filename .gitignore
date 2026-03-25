@@ -3,3 +3,9 @@
 
 # Local Netlify folder
 .netlify
+
+# Local Codex project memory
+.codex/
+
+# Local skill build artifacts
+.skill-build/
