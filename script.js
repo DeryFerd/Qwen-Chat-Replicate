@@ -2638,21 +2638,30 @@ ${safeCode}
     }
 
     const toolActivityMap = new WeakMap();
-    const AGENT_PHASES = ['planning', 'executing', 'reviewing', 'completed'];
 
-    function createAgentPhaseState() {
-        return {
-            planning: 'pending',
-            executing: 'pending',
-            reviewing: 'pending',
-            completed: 'pending'
-        };
+    function normalizePlanStatus(status) {
+        const value = String(status || '').toLowerCase();
+        if (value === 'active' || value === 'done' || value === 'error') {
+            return value;
+        }
+        return 'pending';
     }
 
-    function humanizeAgentPhase(phase) {
-        const text = String(phase || '').trim();
-        if (!text) return '';
-        return text.charAt(0).toUpperCase() + text.slice(1);
+    function normalizePlanItems(plan) {
+        if (!Array.isArray(plan)) return [];
+        return plan
+            .map((item, index) => {
+                const title = typeof item === 'string'
+                    ? item.trim()
+                    : String(item?.title || '').trim();
+                if (!title) return null;
+                return {
+                    id: typeof item === 'object' && item?.id ? String(item.id) : `plan-step-${index}`,
+                    title,
+                    status: normalizePlanStatus(typeof item === 'object' ? item?.status : 'pending')
+                };
+            })
+            .filter(Boolean);
     }
 
     function parseJsonMaybe(raw, fallback = {}) {
@@ -2707,7 +2716,7 @@ ${safeCode}
             toolActivityMap.set(messageDiv, {
                 steps: [],
                 expanded: false,
-                phases: createAgentPhaseState(),
+                plan: [],
                 iteration: 0
             });
         }
@@ -2750,29 +2759,22 @@ ${safeCode}
     function ingestAgentEvent(messageDiv, event) {
         if (!messageDiv || !event || typeof event !== 'object') return;
         const state = getToolActivityState(messageDiv);
-        const phase = String(event.phase || '').toLowerCase();
-        const status = String(event.status || '').toLowerCase();
-        if (!AGENT_PHASES.includes(phase)) return;
+        const eventType = String(event.type || '').toLowerCase();
 
         if (typeof event.iteration === 'number' && Number.isFinite(event.iteration)) {
             state.iteration = Math.max(state.iteration, event.iteration);
         }
 
-        if (status === 'active') {
-            AGENT_PHASES.forEach((name) => {
-                if (name !== phase && state.phases[name] === 'active') {
-                    state.phases[name] = 'done';
-                }
-            });
+        if (eventType === 'plan-update') {
+            state.plan = normalizePlanItems(event.plan);
+            renderToolActivityUI(messageDiv);
         }
-
-        state.phases[phase] = status || 'pending';
-        renderToolActivityUI(messageDiv);
     }
 
-    function getActiveAgentPhase(messageDiv) {
+    function getActivePlanTitle(messageDiv) {
         const state = getToolActivityState(messageDiv);
-        return AGENT_PHASES.find((phase) => state.phases[phase] === 'active') || '';
+        const activeStep = state.plan.find((step) => step.status === 'active');
+        return activeStep?.title || '';
     }
 
     function renderToolActivityUI(messageDiv) {
@@ -2780,7 +2782,7 @@ ${safeCode}
         const activity = messageDiv.querySelector('.tool-activity');
         if (!activity) return;
         const state = getToolActivityState(messageDiv);
-        const hasPlan = AGENT_PHASES.some((phase) => state.phases[phase] !== 'pending');
+        const hasPlan = Array.isArray(state.plan) && state.plan.length > 0;
 
         if (!state.steps.length && !hasPlan) {
             activity.hidden = true;
@@ -2793,17 +2795,17 @@ ${safeCode}
         if (hasPlan) {
             const planTitle = document.createElement('div');
             planTitle.className = 'tool-activity-section-title';
-            planTitle.textContent = state.iteration > 0 ? `Task Plan · Loop ${state.iteration}` : 'Task Plan';
+            planTitle.textContent = state.iteration > 0 ? `Task Plan - Loop ${state.iteration}` : 'Task Plan';
             activity.appendChild(planTitle);
 
             const planContainer = document.createElement('div');
             planContainer.className = 'tool-steps';
 
-            AGENT_PHASES.forEach((phase) => {
-                const status = state.phases[phase] || 'pending';
+            state.plan.forEach((planStep, index) => {
+                const status = normalizePlanStatus(planStep.status);
                 const row = document.createElement('div');
                 row.className = `tool-step tool-step-phase tool-step-${status}`;
-                row.dataset.phase = phase;
+                row.dataset.planId = planStep.id || `plan-step-${index}`;
 
                 const iconWrap = document.createElement('span');
                 iconWrap.className = 'tool-step-icon';
@@ -2819,7 +2821,7 @@ ${safeCode}
 
                 const label = document.createElement('span');
                 label.className = 'tool-step-label';
-                label.textContent = humanizeAgentPhase(phase);
+                label.textContent = planStep.title;
                 if (status === 'active') {
                     label.classList.add('is-pending');
                 }
@@ -5419,8 +5421,8 @@ Always prefer these tools over guessing answers when they apply.`;
         }
 
         if (thinkingLabel) {
-            const activePhase = getActiveAgentPhase(messageDiv);
-            thinkingLabel.textContent = activePhase ? `Thinking · ${humanizeAgentPhase(activePhase)}` : 'Thinking';
+            const activePlanTitle = getActivePlanTitle(messageDiv);
+            thinkingLabel.textContent = activePlanTitle ? `Thinking - ${activePlanTitle}` : 'Thinking';
         }
 
         thinkingState.pending = isPending;

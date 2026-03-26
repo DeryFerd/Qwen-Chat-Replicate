@@ -19,6 +19,14 @@ const AGENT_TOOL_INSTRUCTION = [
   'All shell and file operations are sandboxed to the project workspace. If a tool fails, adapt and continue when possible.',
   'When enough evidence is gathered, stop using tools and provide the final answer.'
 ].join(' ');
+const AGENT_PLAN_INSTRUCTION = [
+  'Create a concise execution plan for the current task.',
+  'Return ONLY a JSON array with 3 to 5 objects.',
+  'Each object must include a title and a status.',
+  'Keep each title short, specific, and action-oriented.',
+  'Use pending as the initial status for every step.',
+  'Do not call tools, do not add markdown, and do not include explanation.'
+].join(' ');
 
 const WEB_SEARCH_TOOL = {
   type: 'function',
@@ -291,6 +299,231 @@ function createAgentEventEnvelope(phase, status, iteration) {
       iteration
     }
   });
+}
+
+function createPlanEventEnvelope(planArray, iteration) {
+  return toStreamEnvelope({
+    agent_event: {
+      type: 'plan-update',
+      plan: normalizePlanArray(planArray),
+      ...(Number.isFinite(iteration) ? { iteration } : {})
+    }
+  });
+}
+
+function normalizePlanStatus(status, fallback = 'pending') {
+  const value = String(status || '').toLowerCase();
+  if (value === 'active' || value === 'done' || value === 'error') {
+    return value;
+  }
+  return fallback;
+}
+
+function normalizePlanTitle(title) {
+  return String(title || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizePlanArray(planArray) {
+  if (!Array.isArray(planArray)) {
+    return [];
+  }
+
+  return planArray
+    .map((step, index) => {
+      const rawTitle = typeof step === 'string' ? step : step?.title;
+      const title = normalizePlanTitle(rawTitle);
+      if (!title) {
+        return null;
+      }
+
+      return {
+        id: typeof step === 'object' && step?.id ? String(step.id) : `plan-step-${index}`,
+        title: title.slice(0, 120),
+        status: normalizePlanStatus(typeof step === 'object' ? step?.status : 'pending')
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 5);
+}
+
+function clonePlanArray(planArray) {
+  return normalizePlanArray(planArray).map((step) => ({ ...step }));
+}
+
+function getLastUserMessageText(messages = []) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== 'user') {
+      continue;
+    }
+
+    if (typeof message.content === 'string' && message.content.trim()) {
+      return message.content.trim();
+    }
+
+    if (Array.isArray(message.content)) {
+      const joined = message.content
+        .map((part) => {
+          if (typeof part === 'string') {
+            return part;
+          }
+          return part?.text || '';
+        })
+        .join(' ')
+        .trim();
+      if (joined) {
+        return joined;
+      }
+    }
+  }
+
+  return '';
+}
+
+function buildFallbackPlan(messages = []) {
+  const lastUserMessage = getLastUserMessageText(messages);
+  const contextualStep = lastUserMessage
+    ? `Understand the request: ${normalizePlanTitle(lastUserMessage).slice(0, 72)}`
+    : 'Understand the current request';
+
+  return [
+    { id: 'plan-step-0', title: contextualStep, status: 'pending' },
+    { id: 'plan-step-1', title: 'Gather the needed context', status: 'pending' },
+    { id: 'plan-step-2', title: 'Use the right tools to make progress', status: 'pending' },
+    { id: 'plan-step-3', title: 'Verify the result and answer clearly', status: 'pending' }
+  ];
+}
+
+function finalizePlanArray(planArray, messages = []) {
+  const normalized = normalizePlanArray(planArray);
+  if (normalized.length >= 3) {
+    return normalized;
+  }
+  return buildFallbackPlan(messages);
+}
+
+function ensurePlanHasActiveStep(planArray) {
+  const nextPlan = clonePlanArray(planArray);
+  if (!nextPlan.length) {
+    return nextPlan;
+  }
+
+  if (nextPlan.some((step) => step.status === 'active')) {
+    return nextPlan;
+  }
+
+  const pendingIndex = nextPlan.findIndex((step) => step.status === 'pending');
+  if (pendingIndex !== -1) {
+    nextPlan[pendingIndex].status = 'active';
+  }
+
+  return nextPlan;
+}
+
+function completeActivePlanStep(planArray, options = {}) {
+  const nextPlan = clonePlanArray(planArray);
+  if (!nextPlan.length) {
+    return nextPlan;
+  }
+
+  let activeIndex = nextPlan.findIndex((step) => step.status === 'active');
+  if (activeIndex === -1) {
+    activeIndex = nextPlan.findIndex((step) => step.status === 'pending');
+  }
+
+  if (activeIndex !== -1) {
+    nextPlan[activeIndex].status = options.error ? 'error' : 'done';
+  }
+
+  if (options.activateNext) {
+    const nextPendingIndex = nextPlan.findIndex((step, index) => index > activeIndex && step.status === 'pending');
+    if (nextPendingIndex !== -1) {
+      nextPlan[nextPendingIndex].status = 'active';
+    }
+  }
+
+  return nextPlan;
+}
+
+function markEntirePlanDone(planArray) {
+  const nextPlan = clonePlanArray(planArray);
+  nextPlan.forEach((step) => {
+    if (step.status === 'pending' || step.status === 'active') {
+      step.status = 'done';
+    }
+  });
+  return nextPlan;
+}
+
+function didToolExecutionFail(toolMessages = []) {
+  return toolMessages.some((toolMessage) => {
+    const parsed = parseToolArguments(toolMessage?.content);
+    return parsed?.ok === false || Boolean(parsed?.error);
+  });
+}
+
+function extractJsonArray(rawText) {
+  const text = String(rawText || '').trim();
+  if (!text) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch {
+    // Ignore and try lighter parsing below.
+  }
+
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fencedMatch) {
+    try {
+      const parsed = JSON.parse(fencedMatch[1]);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Ignore and try bracket extraction below.
+    }
+  }
+
+  const startIndex = text.indexOf('[');
+  const endIndex = text.lastIndexOf(']');
+  if (startIndex != -1 && endIndex > startIndex) {
+    try {
+      const parsed = JSON.parse(text.slice(startIndex, endIndex + 1));
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+async function generateAgentPlan(payload, env) {
+  const planningPayload = {
+    model: payload.model,
+    messages: [
+      { role: 'system', content: AGENT_TOOL_INSTRUCTION },
+      { role: 'system', content: AGENT_PLAN_INSTRUCTION },
+      ...(Array.isArray(payload.messages) ? payload.messages : []),
+      { role: 'user', content: 'Return the execution plan now as JSON only.' }
+    ],
+    stream: false,
+    ...(payload.options ? { options: payload.options } : {}),
+    ...(payload.keep_alive ? { keep_alive: payload.keep_alive } : {}),
+    ...(payload.think !== undefined ? { think: false } : {})
+  };
+
+  const upstream = await callOllama(planningPayload, env.OLLAMA_API_KEY);
+  const responseState = await consumeJson(upstream);
+  const parsedPlan = extractJsonArray(responseState.content);
+  return ensurePlanHasActiveStep(finalizePlanArray(parsedPlan, payload.messages));
 }
 
 function resolveWorkspaceRoot(env) {
@@ -809,15 +1042,27 @@ async function* createChatStream(payload, env, options = {}) {
     toolsEnabled,
     toolProfile
   });
-  let planningStarted = false;
+  let currentPlan = [];
 
   if (isAgentProfile) {
-    planningStarted = true;
-    yield createAgentEventEnvelope('planning', 'active', 1);
+    try {
+      currentPlan = await generateAgentPlan(payload, env);
+    } catch {
+      currentPlan = ensurePlanHasActiveStep(buildFallbackPlan(payload.messages));
+    }
+
+    if (currentPlan.length) {
+      yield createPlanEventEnvelope(currentPlan, 1);
+    }
   }
 
   for (let step = 0; step < MAX_TOOL_ITERATIONS; step += 1) {
     const iteration = step + 1;
+    if (isAgentProfile && currentPlan.length && iteration > 1) {
+      currentPlan = ensurePlanHasActiveStep(currentPlan);
+      yield createPlanEventEnvelope(currentPlan, iteration);
+    }
+
     const upstreamPayload = {
       ...payload,
       messages,
@@ -835,7 +1080,8 @@ async function* createChatStream(payload, env, options = {}) {
 
     for await (const line of iterateNdjsonLines(upstream.body)) {
       parseStreamLine(line, streamState);
-      yield `${line}\n`;
+      yield `${line}
+`;
     }
 
     messages = [
@@ -849,13 +1095,9 @@ async function* createChatStream(payload, env, options = {}) {
     ];
 
     if (!streamState.toolCalls.length) {
-      if (isAgentProfile) {
-        if (planningStarted) {
-          yield createAgentEventEnvelope('planning', 'done', iteration);
-        } else {
-          yield createAgentEventEnvelope('reviewing', 'done', iteration);
-        }
-        yield createAgentEventEnvelope('completed', 'done', iteration);
+      if (isAgentProfile && currentPlan.length) {
+        currentPlan = markEntirePlanDone(currentPlan);
+        yield createPlanEventEnvelope(currentPlan, iteration);
       }
       return;
     }
@@ -867,36 +1109,26 @@ async function* createChatStream(payload, env, options = {}) {
       !FRONTEND_TOOL_NAMES.has(toolCall?.function?.name)
     );
 
-    if (isAgentProfile && planningStarted) {
-      yield createAgentEventEnvelope('planning', 'done', iteration);
-      planningStarted = false;
-    }
-
-    if (isAgentProfile) {
-      yield createAgentEventEnvelope('executing', 'active', iteration);
-    }
-
+    let backendToolFailed = false;
     if (backendToolCalls.length) {
       const toolMessages = await executeToolCalls(backendToolCalls, env);
+      backendToolFailed = didToolExecutionFail(toolMessages);
       for (const toolMessage of toolMessages) {
         yield toStreamEnvelope(toolMessage);
       }
       messages = [...messages, ...toolMessages];
     }
 
-    if (isAgentProfile) {
-      yield createAgentEventEnvelope('executing', 'done', iteration);
-      yield createAgentEventEnvelope('reviewing', 'active', iteration);
-    }
-
     if (frontendToolCalls.length) {
       return;
     }
 
-    if (isAgentProfile) {
-      yield createAgentEventEnvelope('reviewing', 'done', iteration);
-      planningStarted = true;
-      yield createAgentEventEnvelope('planning', 'active', iteration + 1);
+    if (isAgentProfile && currentPlan.length) {
+      currentPlan = completeActivePlanStep(currentPlan, {
+        activateNext: !backendToolFailed,
+        error: backendToolFailed
+      });
+      yield createPlanEventEnvelope(currentPlan, iteration);
     }
   }
 
