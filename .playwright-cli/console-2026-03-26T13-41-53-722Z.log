@@ -1,0 +1,10 @@
+Total messages: 6 (Errors: 3, Warnings: 3)
+
+[WARNING] An iframe which has both allow-scripts and allow-same-origin for its sandbox attribute can escape its sandboxing. @ http://127.0.0.1:3000/script.js:1197
+[ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:3000/favicon.ico:0
+[WARNING] An iframe which has both allow-scripts and allow-same-origin for its sandbox attribute can escape its sandboxing. @ http://127.0.0.1:3000/script.js:1197
+[WARNING] An iframe which has both allow-scripts and allow-same-origin for its sandbox attribute can escape its sandboxing. @ http://127.0.0.1:3000/script.js:1197
+Uncaught ReferenceError: module is not defined
+    at <anonymous> (https://cdn.jsdelivr.net/npm/highlight.js/lib/core.min.js:6:22872)
+Uncaught ReferenceError: require is not defined
+    at <anonymous> (https://cdn.jsdelivr.net/npm/highlight.js@11.11.1/lib/common.min.js:6:9)

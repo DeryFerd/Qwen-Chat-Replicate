@@ -202,6 +202,27 @@ document.addEventListener('DOMContentLoaded', () => {
             doneText: (query, count) => query ? `Searched for "${query}"` : 'Web search complete',
             color: '#6366f1'
         },
+        execute_shell: {
+            icon: 'ph-terminal-window',
+            label: 'Shell',
+            pendingText: (command) => command ? `Running ${command}…` : 'Running shell command…',
+            doneText: (_, result) => result ? `Shell: ${String(result).slice(0, 72)}` : 'Shell command finished',
+            color: '#22c55e'
+        },
+        file_manager: {
+            icon: 'ph-file-code',
+            label: 'File Manager',
+            pendingText: (target) => target ? `Working with ${target}…` : 'Managing files…',
+            doneText: (_, result) => result ? `File: ${String(result).slice(0, 72)}` : 'File step finished',
+            color: '#f97316'
+        },
+        python_interpreter: {
+            icon: 'ph-file-py',
+            label: 'Python',
+            pendingText: () => 'Running Python…',
+            doneText: (_, result) => result ? `Python: ${String(result).slice(0, 72)}` : 'Python finished',
+            color: '#38bdf8'
+        },
         code_runner: {
             icon: 'ph-terminal',
             label: 'Code Runner',
@@ -1170,7 +1191,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <button class="artifact-tab" data-tab="code">Code</button>
                 </div>
                 <div class="artifact-body">
-                    <iframe id="artifact-iframe" class="artifact-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
+                    <iframe id="artifact-iframe" class="artifact-iframe" sandbox="allow-scripts"></iframe>
                     <pre id="artifact-code-view" class="artifact-code-view" hidden></pre>
                 </div>
             `;
@@ -2617,12 +2638,77 @@ ${safeCode}
     }
 
     const toolActivityMap = new WeakMap();
+    const AGENT_PHASES = ['planning', 'executing', 'reviewing', 'completed'];
+
+    function createAgentPhaseState() {
+        return {
+            planning: 'pending',
+            executing: 'pending',
+            reviewing: 'pending',
+            completed: 'pending'
+        };
+    }
+
+    function humanizeAgentPhase(phase) {
+        const text = String(phase || '').trim();
+        if (!text) return '';
+        return text.charAt(0).toUpperCase() + text.slice(1);
+    }
+
+    function parseJsonMaybe(raw, fallback = {}) {
+        if (!raw) return fallback;
+        if (typeof raw === 'object') return raw;
+        try {
+            return JSON.parse(raw);
+        } catch {
+            return fallback;
+        }
+    }
+
+    function extractToolQuery(args = {}) {
+        if (!args || typeof args !== 'object') return '';
+        if (typeof args.query === 'string' && args.query.trim()) return args.query.trim();
+        if (typeof args.expression === 'string' && args.expression.trim()) return args.expression.trim();
+        if (typeof args.command === 'string' && args.command.trim()) {
+            const joinedArgs = Array.isArray(args.args) ? args.args.join(' ') : '';
+            return `${args.command}${joinedArgs ? ` ${joinedArgs}` : ''}`.trim();
+        }
+        if (typeof args.path === 'string' && args.path.trim()) {
+            const action = typeof args.action === 'string' ? `${args.action} ` : '';
+            return `${action}${args.path}`.trim();
+        }
+        if (typeof args.timezone === 'string' && args.timezone.trim()) return args.timezone.trim();
+        if (typeof args.code === 'string' && args.code.trim()) return `${args.code.trim().slice(0, 60)}${args.code.length > 60 ? '…' : ''}`;
+        return '';
+    }
+
+    function getToolResultPreview(parsedResult) {
+        if (!parsedResult || typeof parsedResult !== 'object') return null;
+        if (Array.isArray(parsedResult.results)) return parsedResult.results;
+        if (Array.isArray(parsedResult.entries)) return `${parsedResult.entries.length} entries`;
+        if (typeof parsedResult.result === 'string' && parsedResult.result) return parsedResult.result;
+        if (typeof parsedResult.output === 'string' && parsedResult.output) return parsedResult.output;
+        if (typeof parsedResult.local === 'string' && parsedResult.local) return parsedResult.local;
+        if (typeof parsedResult.stdout === 'string' && parsedResult.stdout) return parsedResult.stdout;
+        if (typeof parsedResult.content === 'string' && parsedResult.content) return parsedResult.content;
+        if (typeof parsedResult.action === 'string' && parsedResult.action) {
+            return parsedResult.path ? `${parsedResult.action} ${parsedResult.path}` : parsedResult.action;
+        }
+        if (typeof parsedResult.error === 'string' && parsedResult.error) return parsedResult.error;
+        return null;
+    }
+
+    function isToolResultError(parsedResult) {
+        return Boolean(parsedResult?.error) && parsedResult?.ok !== true;
+    }
 
     function getToolActivityState(messageDiv) {
         if (!toolActivityMap.has(messageDiv)) {
             toolActivityMap.set(messageDiv, {
                 steps: [],
-                expanded: false
+                expanded: false,
+                phases: createAgentPhaseState(),
+                iteration: 0
             });
         }
         return toolActivityMap.get(messageDiv);
@@ -2649,8 +2735,44 @@ ${safeCode}
             step.status = error ? 'error' : 'done';
             step.result = result;
             step.query = query || step.query;
+        } else {
+            state.steps.push({
+                toolName,
+                query,
+                status: error ? 'error' : 'done',
+                result,
+                id: `${toolName}-${Date.now()}`
+            });
         }
         renderToolActivityUI(messageDiv);
+    }
+
+    function ingestAgentEvent(messageDiv, event) {
+        if (!messageDiv || !event || typeof event !== 'object') return;
+        const state = getToolActivityState(messageDiv);
+        const phase = String(event.phase || '').toLowerCase();
+        const status = String(event.status || '').toLowerCase();
+        if (!AGENT_PHASES.includes(phase)) return;
+
+        if (typeof event.iteration === 'number' && Number.isFinite(event.iteration)) {
+            state.iteration = Math.max(state.iteration, event.iteration);
+        }
+
+        if (status === 'active') {
+            AGENT_PHASES.forEach((name) => {
+                if (name !== phase && state.phases[name] === 'active') {
+                    state.phases[name] = 'done';
+                }
+            });
+        }
+
+        state.phases[phase] = status || 'pending';
+        renderToolActivityUI(messageDiv);
+    }
+
+    function getActiveAgentPhase(messageDiv) {
+        const state = getToolActivityState(messageDiv);
+        return AGENT_PHASES.find((phase) => state.phases[phase] === 'active') || '';
     }
 
     function renderToolActivityUI(messageDiv) {
@@ -2658,13 +2780,64 @@ ${safeCode}
         const activity = messageDiv.querySelector('.tool-activity');
         if (!activity) return;
         const state = getToolActivityState(messageDiv);
-        if (!state.steps.length) {
+        const hasPlan = AGENT_PHASES.some((phase) => state.phases[phase] !== 'pending');
+
+        if (!state.steps.length && !hasPlan) {
             activity.hidden = true;
             return;
         }
         activity.hidden = false;
         activity.innerHTML = '';
         activity.className = 'tool-activity tool-activity-v2';
+
+        if (hasPlan) {
+            const planTitle = document.createElement('div');
+            planTitle.className = 'tool-activity-section-title';
+            planTitle.textContent = state.iteration > 0 ? `Task Plan · Loop ${state.iteration}` : 'Task Plan';
+            activity.appendChild(planTitle);
+
+            const planContainer = document.createElement('div');
+            planContainer.className = 'tool-steps';
+
+            AGENT_PHASES.forEach((phase) => {
+                const status = state.phases[phase] || 'pending';
+                const row = document.createElement('div');
+                row.className = `tool-step tool-step-phase tool-step-${status}`;
+                row.dataset.phase = phase;
+
+                const iconWrap = document.createElement('span');
+                iconWrap.className = 'tool-step-icon';
+                if (status === 'active') {
+                    iconWrap.innerHTML = '<span class="tool-step-spinner"></span>';
+                } else if (status === 'done') {
+                    iconWrap.innerHTML = '<i class="ph ph-check-circle"></i>';
+                } else if (status === 'error') {
+                    iconWrap.innerHTML = '<i class="ph ph-x-circle"></i>';
+                } else {
+                    iconWrap.innerHTML = '<i class="ph ph-circle"></i>';
+                }
+
+                const label = document.createElement('span');
+                label.className = 'tool-step-label';
+                label.textContent = humanizeAgentPhase(phase);
+                if (status === 'active') {
+                    label.classList.add('is-pending');
+                }
+
+                row.appendChild(iconWrap);
+                row.appendChild(label);
+                planContainer.appendChild(row);
+            });
+
+            activity.appendChild(planContainer);
+        }
+
+        if (state.steps.length) {
+            const actionTitle = document.createElement('div');
+            actionTitle.className = 'tool-activity-section-title';
+            actionTitle.textContent = hasPlan ? 'Agent Actions' : 'Tool Activity';
+            activity.appendChild(actionTitle);
+        }
 
         const stepsContainer = document.createElement('div');
         stepsContainer.className = 'tool-steps';
@@ -4353,7 +4526,43 @@ Always prefer these tools over guessing answers when they apply.`;
         let webSearchCount = 0;
         const pendingFrontendToolCalls = [];
         const frontendToolCallKeys = new Set();
+        const pendingAssistantToolCalls = [];
+        const assistantToolCallKeys = new Set();
         let frontendToolRound = 0;
+
+        const queueAssistantToolCall = (call) => {
+            const callName = call?.function?.name;
+            if (!callName) return { callName: '', args: {} };
+            const args = parseJsonMaybe(call?.function?.arguments, {});
+            const normalizedCall = {
+                ...call,
+                function: {
+                    ...call.function,
+                    arguments: args
+                }
+            };
+            const key = `${callName}:${JSON.stringify(args)}`;
+
+            if (!assistantToolCallKeys.has(key)) {
+                assistantToolCallKeys.add(key);
+                pendingAssistantToolCalls.push({ call: normalizedCall, args, key });
+            }
+
+            if (FRONTEND_TOOLS[callName] && !frontendToolCallKeys.has(key)) {
+                frontendToolCallKeys.add(key);
+                pendingFrontendToolCalls.push({ call: normalizedCall, args, key });
+            }
+
+            return { callName, args, key };
+        };
+
+        const takeQueuedToolCalls = () => {
+            const assistantCalls = pendingAssistantToolCalls.splice(0);
+            const frontendCalls = pendingFrontendToolCalls.splice(0);
+            assistantToolCallKeys.clear();
+            frontendToolCallKeys.clear();
+            return { assistantCalls, frontendCalls };
+        };
 
         const finalizeAssistantMessage = ({ aborted } = {}) => {
             if (didFinalize) return;
@@ -4409,20 +4618,22 @@ Always prefer these tools over guessing answers when they apply.`;
                 model: getSelectedModel(),
                 messages: buildRequestMessages(),
                 stream: true,
+                toolProfile: 'agent',
                 ...(supportsThinking ? { think: enableThinking } : {})
             };
 
             const runFrontendToolsAndContinue = async () => {
                 if (!pendingFrontendToolCalls.length) return;
-                frontendToolRound = 1;
+                frontendToolRound += 1;
 
-                const toolCallsPayload = pendingFrontendToolCalls.map(entry => entry.call);
+                const { assistantCalls, frontendCalls } = takeQueuedToolCalls();
+                const toolCallsPayload = assistantCalls.map(entry => entry.call);
 
-                for (const entry of pendingFrontendToolCalls) {
+                for (const entry of frontendCalls) {
                     const toolName = entry?.call?.function?.name;
                     if (!toolName || !FRONTEND_TOOLS[toolName]) continue;
                     const toolArgs = entry?.args || {};
-                    const pendingQuery = toolArgs?.expression || toolArgs?.code?.slice(0, 60) || toolArgs?.timezone || '';
+                    const pendingQuery = extractToolQuery(toolArgs);
                     let result = null;
                     try {
                         result = await FRONTEND_TOOLS[toolName].execute(toolArgs);
@@ -4432,7 +4643,7 @@ Always prefer these tools over guessing answers when they apply.`;
 
                     const resolvedDisplay = result?.result || result?.output || result?.local || null;
                     if (typeof resolveToolStep === 'function') {
-                        resolveToolStep(assistantMessage, toolName, pendingQuery, resolvedDisplay);
+                        resolveToolStep(assistantMessage, toolName, pendingQuery, resolvedDisplay, Boolean(result?.error));
                     } else {
                         const fallbackText = resolvedDisplay
                             ? `${toolName}: ${resolvedDisplay}`
@@ -4466,6 +4677,7 @@ Always prefer these tools over guessing answers when they apply.`;
                         ...pendingToolMessages
                     ],
                     stream: true,
+                    toolProfile: 'agent',
                     ...(supportsThinking ? { think: enableThinking } : {})
                 };
 
@@ -4517,6 +4729,19 @@ Always prefer these tools over guessing answers when they apply.`;
 
                         try {
                             const parsed = JSON.parse(line);
+                            const agentEvent = parsed?.message?.agent_event;
+                            if (agentEvent) {
+                                ingestAgentEvent(assistantMessage, agentEvent);
+                                updateAssistantMessageState(assistantMessage, {
+                                    content: fullReply,
+                                    thinking: enableThinking ? fullThinking : '',
+                                    pendingThinking: enableThinking,
+                                    forceThinking: enableThinking,
+                                    finalized: false
+                                });
+                                continue;
+                            }
+
                             const thinkingToken = parsed?.message?.thinking || '';
                             const contentToken = parsed?.message?.content || '';
                             const toolName = parsed?.message?.tool_name || parsed?.message?.name;
@@ -4528,59 +4753,33 @@ Always prefer these tools over guessing answers when they apply.`;
                             if (contentToken && !isToolMessage) fullReply += contentToken;
                             if (Array.isArray(toolCalls) && toolCalls.length) {
                                 toolCalls.forEach(call => {
-                                    const callName = call?.function?.name;
+                                    const { callName, args } = queueAssistantToolCall(call);
                                     if (callName) {
-                                        let query = '';
-                                        try {
-                                            const args = typeof call.function.arguments === 'string'
-                                                ? JSON.parse(call.function.arguments)
-                                                : call.function.arguments;
-                                            query = args?.query || args?.expression || args?.url || args?.code || args?.timezone || '';
-                                        } catch {
-                                            query = '';
-                                        }
-                                        pushToolStep(assistantMessage, callName, query);
+                                        pushToolStep(assistantMessage, callName, extractToolQuery(args));
                                     }
                                 });
                             }
 
                             if (toolName) {
-                                let resultData = null;
-                                let queryFromResult = '';
-                                try {
-                                    const parsedResult = JSON.parse(parsed?.message?.content || '{}');
-                                    resultData = parsedResult.results || parsedResult.result || parsedResult.output || null;
-                                    queryFromResult = parsedResult.query || '';
-                                } catch {
-                                    resultData = null;
-                                }
+                                const parsedResult = parseJsonMaybe(parsed?.message?.content, {});
+                                const resultData = getToolResultPreview(parsedResult);
+                                const queryFromResult = parsedResult?.query || parsedResult?.path || parsedResult?.command || '';
+                                const toolFailed = isToolResultError(parsedResult);
 
                                 if (toolName && FRONTEND_TOOLS[toolName]) {
-                                    // Parse tool arguments from the streamed message
-                                    let toolArgs = {};
-                                    try {
-                                        const rawArgs = parsed?.message?.arguments || parsed?.message?.content || '{}';
-                                        toolArgs = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
-                                    } catch {
-                                        toolArgs = {};
-                                    }
-
-                                    // Show pending state in tool activity
-                                    const pendingQuery = toolArgs?.expression || toolArgs?.code?.slice(0, 60) || toolArgs?.timezone || '';
+                                    const toolArgs = parseJsonMaybe(parsed?.message?.arguments || parsed?.message?.content, {});
+                                    const pendingQuery = extractToolQuery(toolArgs);
                                     if (typeof pushToolStep === 'function') {
                                         pushToolStep(assistantMessage, toolName, pendingQuery);
                                     } else {
                                         updateToolActivity(assistantMessage, `Running ${toolName}...`);
                                     }
 
-                                    // Execute the frontend tool asynchronously
                                     Promise.resolve(FRONTEND_TOOLS[toolName].execute(toolArgs)).then(result => {
                                         const resultJson = JSON.stringify(result);
-
-                                        // Resolve the tool step visual
                                         const resolvedDisplay = result?.result || result?.output || result?.local || null;
                                         if (typeof resolveToolStep === 'function') {
-                                            resolveToolStep(assistantMessage, toolName, pendingQuery, resolvedDisplay);
+                                            resolveToolStep(assistantMessage, toolName, pendingQuery, resolvedDisplay, Boolean(result?.error));
                                         } else {
                                             const fallbackText = resolvedDisplay
                                                 ? `${toolName}: ${resolvedDisplay}`
@@ -4588,14 +4787,12 @@ Always prefer these tools over guessing answers when they apply.`;
                                             updateToolActivity(assistantMessage, fallbackText);
                                         }
 
-                                        // Inject the result back as a tool message so the AI can use it
                                         pendingToolMessages.push({
                                             role: 'tool',
                                             tool_name: toolName,
                                             content: resultJson
                                         });
 
-                                        // For code_runner: open output in artifact panel if there is output
                                         if (toolName === 'code_runner' && (result?.output || result?.error)) {
                                             const displayOutput = [
                                                 result.output ? `// Output:\n${result.output}` : '',
@@ -4608,7 +4805,7 @@ Always prefer these tools over guessing answers when they apply.`;
                                         }
                                     });
 
-                                    continue; // Skip the normal pendingToolMessages.push below - handled above
+                                    continue;
                                 }
 
                                 pendingToolMessages.push({
@@ -4617,7 +4814,7 @@ Always prefer these tools over guessing answers when they apply.`;
                                     content: parsed?.message?.content || ''
                                 });
 
-                                resolveToolStep(assistantMessage, toolName, queryFromResult, resultData);
+                                resolveToolStep(assistantMessage, toolName, queryFromResult, resultData, toolFailed);
                             }
 
                             updateAssistantMessageState(assistantMessage, {
@@ -4637,6 +4834,10 @@ Always prefer these tools over guessing answers when they apply.`;
                 if (followPending.trim()) {
                     try {
                         const parsed = JSON.parse(followPending);
+                        const agentEvent = parsed?.message?.agent_event;
+                        if (agentEvent) {
+                            ingestAgentEvent(assistantMessage, agentEvent);
+                        }
                         const thinkingToken = parsed?.message?.thinking || '';
                         const contentToken = parsed?.message?.content || '';
 
@@ -4645,6 +4846,10 @@ Always prefer these tools over guessing answers when they apply.`;
                     } catch {
                         // Ignore trailing non-JSON content.
                     }
+                }
+
+                if (pendingFrontendToolCalls.length) {
+                    await runFrontendToolsAndContinue();
                 }
             };
 
@@ -4699,6 +4904,19 @@ Always prefer these tools over guessing answers when they apply.`;
 
                     try {
                         const parsed = JSON.parse(line);
+                        const agentEvent = parsed?.message?.agent_event;
+                        if (agentEvent) {
+                            ingestAgentEvent(assistantMessage, agentEvent);
+                            updateAssistantMessageState(assistantMessage, {
+                                content: fullReply,
+                                thinking: enableThinking ? fullThinking : '',
+                                pendingThinking: enableThinking,
+                                forceThinking: enableThinking,
+                                finalized: false
+                            });
+                            continue;
+                        }
+
                         const thinkingToken = parsed?.message?.thinking || '';
                         const contentToken = parsed?.message?.content || '';
                         const toolName = parsed?.message?.tool_name || parsed?.message?.name;
@@ -4710,68 +4928,33 @@ Always prefer these tools over guessing answers when they apply.`;
                         if (contentToken && !isToolMessage) fullReply += contentToken;
                         if (Array.isArray(toolCalls) && toolCalls.length) {
                             toolCalls.forEach(call => {
-                                const callName = call?.function?.name;
+                                const { callName, args } = queueAssistantToolCall(call);
                                 if (callName) {
-                                    let query = '';
-                                    let args = {};
-                                    try {
-                                        args = typeof call.function.arguments === 'string'
-                                            ? JSON.parse(call.function.arguments)
-                                            : call.function.arguments;
-                                        query = args?.query || args?.expression || args?.url || args?.code || args?.timezone || '';
-                                    } catch {
-                                        query = '';
-                                        args = {};
-                                    }
-                                    pushToolStep(assistantMessage, callName, query);
-                                    if (frontendToolRound === 0 && FRONTEND_TOOLS[callName]) {
-                                        const key = `${callName}:${JSON.stringify(args)}`;
-                                        if (!frontendToolCallKeys.has(key)) {
-                                            frontendToolCallKeys.add(key);
-                                            pendingFrontendToolCalls.push({ call, args });
-                                        }
-                                    }
+                                    pushToolStep(assistantMessage, callName, extractToolQuery(args));
                                 }
                             });
                         }
 
                         if (toolName) {
-                            let resultData = null;
-                            let queryFromResult = '';
-                            try {
-                                const parsedResult = JSON.parse(parsed?.message?.content || '{}');
-                                resultData = parsedResult.results || parsedResult.result || parsedResult.output || null;
-                                queryFromResult = parsedResult.query || '';
-                            } catch {
-                                resultData = null;
-                            }
+                            const parsedResult = parseJsonMaybe(parsed?.message?.content, {});
+                            const resultData = getToolResultPreview(parsedResult);
+                            const queryFromResult = parsedResult?.query || parsedResult?.path || parsedResult?.command || '';
+                            const toolFailed = isToolResultError(parsedResult);
 
                             if (toolName && FRONTEND_TOOLS[toolName]) {
-                                // Parse tool arguments from the streamed message
-                                let toolArgs = {};
-                                try {
-                                    const rawArgs = parsed?.message?.arguments || parsed?.message?.content || '{}';
-                                    toolArgs = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
-                                } catch {
-                                    toolArgs = {};
-                                }
-
-                                // Show pending state in tool activity
-                                const pendingQuery = toolArgs?.expression || toolArgs?.code?.slice(0, 60) || toolArgs?.timezone || '';
+                                const toolArgs = parseJsonMaybe(parsed?.message?.arguments || parsed?.message?.content, {});
+                                const pendingQuery = extractToolQuery(toolArgs);
                                 if (typeof pushToolStep === 'function') {
                                     pushToolStep(assistantMessage, toolName, pendingQuery);
                                 } else {
                                     updateToolActivity(assistantMessage, `Running ${toolName}...`);
                                 }
 
-                                // Execute the frontend tool asynchronously
                                 Promise.resolve(FRONTEND_TOOLS[toolName].execute(toolArgs)).then(result => {
                                     const resultJson = JSON.stringify(result);
-
-                                    // Resolve the tool step visual
                                     const resolvedDisplay = result?.result || result?.output || result?.local || null;
                                     if (typeof resolveToolStep === 'function') {
-                                        resolveToolStep(assistantMessage, toolName, pendingQuery, resolvedDisplay);
+                                        resolveToolStep(assistantMessage, toolName, pendingQuery, resolvedDisplay, Boolean(result?.error));
                                     } else {
                                         const fallbackText = resolvedDisplay
                                             ? `${toolName}: ${resolvedDisplay}`
@@ -4779,14 +4962,12 @@ Always prefer these tools over guessing answers when they apply.`;
                                         updateToolActivity(assistantMessage, fallbackText);
                                     }
 
-                                    // Inject the result back as a tool message so the AI can use it
                                     pendingToolMessages.push({
                                         role: 'tool',
                                         tool_name: toolName,
                                         content: resultJson
                                     });
 
-                                    // For code_runner: open output in artifact panel if there is output
                                     if (toolName === 'code_runner' && (result?.output || result?.error)) {
                                         const displayOutput = [
                                             result.output ? `// Output:\n${result.output}` : '',
@@ -4799,7 +4980,7 @@ Always prefer these tools over guessing answers when they apply.`;
                                     }
                                 });
 
-                                continue; // Skip the normal pendingToolMessages.push below - handled above
+                                continue;
                             }
 
                             pendingToolMessages.push({
@@ -4808,7 +4989,7 @@ Always prefer these tools over guessing answers when they apply.`;
                                 content: parsed?.message?.content || ''
                             });
 
-                            resolveToolStep(assistantMessage, toolName, queryFromResult, resultData);
+                            resolveToolStep(assistantMessage, toolName, queryFromResult, resultData, toolFailed);
                         }
 
                         updateAssistantMessageState(assistantMessage, {
@@ -4828,6 +5009,10 @@ Always prefer these tools over guessing answers when they apply.`;
             if (pending.trim()) {
                 try {
                     const parsed = JSON.parse(pending);
+                    const agentEvent = parsed?.message?.agent_event;
+                    if (agentEvent) {
+                        ingestAgentEvent(assistantMessage, agentEvent);
+                    }
                     const thinkingToken = parsed?.message?.thinking || '';
                     const contentToken = parsed?.message?.content || '';
 
@@ -5234,7 +5419,8 @@ Always prefer these tools over guessing answers when they apply.`;
         }
 
         if (thinkingLabel) {
-            thinkingLabel.textContent = 'Thinking';
+            const activePhase = getActiveAgentPhase(messageDiv);
+            thinkingLabel.textContent = activePhase ? `Thinking · ${humanizeAgentPhase(activePhase)}` : 'Thinking';
         }
 
         thinkingState.pending = isPending;

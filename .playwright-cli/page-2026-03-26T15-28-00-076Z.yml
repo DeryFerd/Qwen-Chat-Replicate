@@ -1,0 +1,140 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - link "Qwen Qwen" [ref=e5] [cursor=pointer]:
+        - /url: "#"
+        - img "Qwen" [ref=e6]
+        - generic [ref=e7]: Qwen
+      - button " New Chat" [ref=e8] [cursor=pointer]:
+        - generic [ref=e9]: 
+        - generic [ref=e10]: New Chat
+      - generic [ref=e11]:
+        - generic [ref=e12]: 
+        - textbox "Search chats (Ctrl+K)" [ref=e13]:
+          - /placeholder: Search chats
+        - button "":
+          - generic: 
+      - generic [ref=e124]:
+        - heading "Today" [level=3] [ref=e125]
+        - list [ref=e126]:
+          - listitem [ref=e127]:
+            - link " Gunakan execute_shell untuk menjalankan pwd, lalu" [ref=e128] [cursor=pointer]:
+              - /url: "#"
+              - generic [ref=e129]: 
+              - generic [ref=e131]: Gunakan execute_shell untuk menjalankan pwd, lalu
+              - text: 
+      - generic [ref=e15]:
+        - button "U User" [ref=e16] [cursor=pointer]:
+          - generic [ref=e17]: U
+          - generic [ref=e18]: User
+        - button "" [ref=e19] [cursor=pointer]:
+          - generic [ref=e20]: 
+        - button "" [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]: 
+        - button "" [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]: 
+    - main [ref=e25]:
+      - generic [ref=e26]:
+        - button "" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]: 
+        - generic [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]:
+            - img "Qwen" [ref=e32]
+            - generic [ref=e33]: Qwen3.5 397B
+          - generic [ref=e34]: 
+        - button " Share" [ref=e36] [cursor=pointer]:
+          - generic [ref=e37]: 
+          - generic [ref=e38]: Share
+      - generic [ref=e39]:
+        - text:    
+        - generic [ref=e91]:
+          - generic [ref=e92]:
+            - generic [ref=e93]: U
+            - generic [ref=e94]:
+              - generic [ref=e95]: Gunakan execute_shell untuk menjalankan pwd, lalu gunakan file_manager untuk membaca README.md, lalu gunakan python_interpreter untuk menghitung 6*7. Setelah semua tool selesai, jawab singkat dan sebutkan tool yang dipakai.
+              - button "" [ref=e97] [cursor=pointer]:
+                - generic [ref=e98]: 
+          - generic [ref=e99]:
+            - img "Qwen" [ref=e101]
+            - generic [ref=e102]:
+              - text:  
+              - generic [ref=e103]:
+                - generic [ref=e132]: Task Plan · Loop 2
+                - generic [ref=e133]:
+                  - generic [ref=e134]:
+                    - generic [ref=e136]: 
+                    - generic [ref=e137]: Planning
+                  - generic [ref=e138]:
+                    - generic [ref=e140]: 
+                    - generic [ref=e141]: Executing
+                  - generic [ref=e142]:
+                    - generic [ref=e144]: 
+                    - generic [ref=e145]: Reviewing
+                  - generic [ref=e146]:
+                    - generic [ref=e148]: 
+                    - generic [ref=e149]: Completed
+                - generic [ref=e150]: Agent Actions
+                - generic [ref=e151]:
+                  - generic [ref=e152]:
+                    - generic [ref=e154]: 
+                    - generic [ref=e155]: "Shell: D:\\Portfolio Data\\Antigravity Coba Coba\\qwen-chat"
+                  - generic [ref=e156]:
+                    - generic [ref=e158]: 
+                    - generic [ref=e159]: "File: Replicating Qwen Chat"
+                  - generic [ref=e160]:
+                    - generic [ref=e162]: 
+                    - generic [ref=e163]: "Python: 42"
+              - generic [ref=e164]:
+                - paragraph [ref=e165]:
+                  - strong [ref=e166]: "Hasil:"
+                - list [ref=e167]:
+                  - listitem [ref=e168]:
+                    - code [ref=e169]: pwd
+                    - text: ":"
+                    - code [ref=e170]: D:\Portfolio Data\Antigravity Coba Coba\qwen-chat
+                  - listitem [ref=e171]:
+                    - code [ref=e172]: README.md
+                    - text: ": \"Replicating Qwen Chat\""
+                  - listitem [ref=e173]:
+                    - code [ref=e174]: 6*7
+                    - text: ":"
+                    - strong [ref=e175]: "42"
+                - paragraph [ref=e176]:
+                  - strong [ref=e177]: "Tool yang dipakai:"
+                  - text: execute_shell, file_manager, python_interpreter
+              - button "" [ref=e179] [cursor=pointer]:
+                - generic [ref=e180]: 
+      - generic [ref=e66]:
+        - generic [ref=e68]:
+          - button "" [ref=e69] [cursor=pointer]:
+            - generic [ref=e70]: 
+          - button "" [ref=e71] [cursor=pointer]:
+            - generic [ref=e72]: 
+          - button "" [ref=e73] [cursor=pointer]:
+            - generic [ref=e74]: 
+          - textbox "Message Qwen..." [active] [ref=e75]
+          - generic [ref=e76]:
+            - button "" [ref=e77] [cursor=pointer]:
+              - generic [ref=e78]: 
+            - button "" [disabled] [ref=e181]:
+              - generic [ref=e182]: 
+        - generic [ref=e81]: AI can make mistakes. Consider verifying important information.
+    - option "Auto" [selected]
+    - option "Bahasa Indonesia"
+    - option "English"
+  - generic:
+    - generic:
+      - generic: Artifact
+      - generic:
+        - button "":
+          - generic: 
+        - button "":
+          - generic: 
+        - button "":
+          - generic: 
+    - generic:
+      - button "Preview"
+      - button "Code"
+    - iframe [ref=e82]:
+      
+  - text:         

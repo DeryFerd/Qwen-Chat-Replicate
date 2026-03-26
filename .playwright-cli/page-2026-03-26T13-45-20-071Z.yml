@@ -1,0 +1,97 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - link "Qwen Qwen" [ref=e5] [cursor=pointer]:
+        - /url: "#"
+        - img "Qwen" [ref=e6]
+        - generic [ref=e7]: Qwen
+      - button " New Chat" [ref=e8] [cursor=pointer]:
+        - generic [ref=e9]: 
+        - generic [ref=e10]: New Chat
+      - generic [ref=e11]:
+        - generic [ref=e12]: 
+        - textbox "Search chats (Ctrl+K)" [ref=e13]:
+          - /placeholder: Search chats
+        - button "":
+          - generic: 
+      - generic [ref=e15]:
+        - button "U User" [ref=e16] [cursor=pointer]:
+          - generic [ref=e17]: U
+          - generic [ref=e18]: User
+        - button "" [ref=e19] [cursor=pointer]:
+          - generic [ref=e20]: 
+        - button "" [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]: 
+        - button "" [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]: 
+    - main [ref=e25]:
+      - generic [ref=e26]:
+        - button "" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]: 
+        - generic [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]:
+            - img "Qwen" [ref=e32]
+            - generic [ref=e33]: Qwen3.5 397B
+          - generic [ref=e34]: 
+        - button " Share" [ref=e36] [cursor=pointer]:
+          - generic [ref=e37]: 
+          - generic [ref=e38]: Share
+      - generic [ref=e40]:
+        - img "Qwen" [ref=e42]
+        - heading "Hi, I'm Qwen" [level=1] [ref=e43]
+        - paragraph [ref=e44]: How can I help you today?
+        - generic [ref=e45]:
+          - button " Describe image with key details and objects" [ref=e46] [cursor=pointer]:
+            - generic [ref=e47]: 
+            - generic [ref=e48]:
+              - generic [ref=e49]: Describe image
+              - generic [ref=e50]: with key details and objects
+          - button " Extract text from a screenshot or photo" [ref=e51] [cursor=pointer]:
+            - generic [ref=e52]: 
+            - generic [ref=e53]:
+              - generic [ref=e54]: Extract text
+              - generic [ref=e55]: from a screenshot or photo
+          - button " Analyze diagram and summarize insights" [ref=e56] [cursor=pointer]:
+            - generic [ref=e57]: 
+            - generic [ref=e58]:
+              - generic [ref=e59]: Analyze diagram
+              - generic [ref=e60]: and summarize insights
+          - button " Design critique for a UI mockup image" [ref=e61] [cursor=pointer]:
+            - generic [ref=e62]: 
+            - generic [ref=e63]:
+              - generic [ref=e64]: Design critique
+              - generic [ref=e65]: for a UI mockup image
+      - generic [ref=e66]:
+        - generic [ref=e68]:
+          - button "" [ref=e69] [cursor=pointer]:
+            - generic [ref=e70]: 
+          - button "" [ref=e71] [cursor=pointer]:
+            - generic [ref=e72]: 
+          - button "" [ref=e73] [cursor=pointer]:
+            - generic [ref=e74]: 
+          - textbox "Message Qwen..." [ref=e75]
+          - generic [ref=e76]:
+            - button "" [ref=e77] [cursor=pointer]:
+              - generic [ref=e78]: 
+            - button "" [disabled] [ref=e79]:
+              - generic [ref=e80]: 
+        - generic [ref=e81]: AI can make mistakes. Consider verifying important information.
+    - option "Auto" [selected]
+    - option "Bahasa Indonesia"
+    - option "English"
+  - generic:
+    - generic:
+      - generic: Artifact
+      - generic:
+        - button "":
+          - generic: 
+        - button "":
+          - generic: 
+        - button "":
+          - generic: 
+    - generic:
+      - button "Preview"
+      - button "Code"
+    - iframe [ref=e82]:
+      
+  - text:         

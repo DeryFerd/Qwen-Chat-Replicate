@@ -1,0 +1,108 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - link "Qwen Qwen" [ref=e5] [cursor=pointer]:
+        - /url: "#"
+        - img "Qwen" [ref=e6]
+        - generic [ref=e7]: Qwen
+      - button " New Chat" [ref=e8] [cursor=pointer]:
+        - generic [ref=e9]: 
+        - generic [ref=e10]: New Chat
+      - generic [ref=e11]:
+        - generic [ref=e12]: 
+        - textbox "Search chats (Ctrl+K)" [ref=e13]:
+          - /placeholder: Search chats
+        - button "":
+          - generic: 
+      - generic [ref=e83]:
+        - heading "Today" [level=3] [ref=e84]
+        - list [ref=e85]:
+          - listitem [ref=e86]:
+            - link " ..." [ref=e87] [cursor=pointer]:
+              - /url: "#"
+              - generic [ref=e88]: 
+              - generic [ref=e90]: ...
+              - text: 
+      - generic [ref=e15]:
+        - button "U User" [ref=e16] [cursor=pointer]:
+          - generic [ref=e17]: U
+          - generic [ref=e18]: User
+        - button "" [ref=e19] [cursor=pointer]:
+          - generic [ref=e20]: 
+        - button "" [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]: 
+        - button "" [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]: 
+    - main [ref=e25]:
+      - generic [ref=e26]:
+        - button "" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]: 
+        - generic [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]:
+            - img "Qwen" [ref=e32]
+            - generic [ref=e33]: Qwen3.5 397B
+          - generic [ref=e34]: 
+        - button " Share" [ref=e36] [cursor=pointer]:
+          - generic [ref=e37]: 
+          - generic [ref=e38]: Share
+      - generic [ref=e39]:
+        - text:    
+        - generic [ref=e91]:
+          - generic [ref=e92]:
+            - generic [ref=e93]: U
+            - generic [ref=e94]:
+              - generic [ref=e95]: Gunakan execute_shell untuk menjalankan pwd, lalu gunakan file_manager untuk membaca README.md, lalu gunakan python_interpreter untuk menghitung 6*7. Setelah semua tool selesai, jawab singkat dan sebutkan tool yang dipakai.
+              - button "" [ref=e97] [cursor=pointer]:
+                - generic [ref=e98]: 
+          - generic [ref=e99]:
+            - img "Qwen" [ref=e101]
+            - generic [ref=e102]:
+              - text:  
+              - generic [ref=e103]:
+                - generic [ref=e104]: Task Plan · Loop 1
+                - generic [ref=e105]:
+                  - generic [ref=e109]: Planning
+                  - generic [ref=e110]:
+                    - generic [ref=e112]: 
+                    - generic [ref=e113]: Executing
+                  - generic [ref=e114]:
+                    - generic [ref=e116]: 
+                    - generic [ref=e117]: Reviewing
+                  - generic [ref=e118]:
+                    - generic [ref=e120]: 
+                    - generic [ref=e121]: Completed
+              - generic: 
+      - generic [ref=e66]:
+        - generic [ref=e68]:
+          - button "" [ref=e69] [cursor=pointer]:
+            - generic [ref=e70]: 
+          - button "" [ref=e71] [cursor=pointer]:
+            - generic [ref=e72]: 
+          - button "" [ref=e73] [cursor=pointer]:
+            - generic [ref=e74]: 
+          - textbox "Message Qwen..." [active] [ref=e75]
+          - generic [ref=e76]:
+            - button "" [ref=e77] [cursor=pointer]:
+              - generic [ref=e78]: 
+            - button "" [ref=e122] [cursor=pointer]:
+              - generic [ref=e123]: 
+        - generic [ref=e81]: AI can make mistakes. Consider verifying important information.
+    - option "Auto" [selected]
+    - option "Bahasa Indonesia"
+    - option "English"
+  - generic:
+    - generic:
+      - generic: Artifact
+      - generic:
+        - button "":
+          - generic: 
+        - button "":
+          - generic: 
+        - button "":
+          - generic: 
+    - generic:
+      - button "Preview"
+      - button "Code"
+    - iframe [ref=e82]:
+      
+  - text:         

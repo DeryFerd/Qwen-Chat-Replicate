@@ -1677,6 +1677,14 @@ ul {
     gap: 6px;
 }
 
+.tool-activity-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
 .tool-steps {
     display: flex;
     flex-direction: column;
@@ -1692,9 +1700,37 @@ ul {
     animation: toolStepIn 0.2s ease-out;
 }
 
+.tool-step-phase {
+    padding: 7px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.tool-step-phase.tool-step-active {
+    border-color: rgba(99, 102, 241, 0.45);
+    background: rgba(99, 102, 241, 0.1);
+}
+
+.tool-step-phase.tool-step-done {
+    border-color: rgba(34, 197, 94, 0.28);
+}
+
+.tool-step-phase.tool-step-error {
+    border-color: rgba(239, 68, 68, 0.35);
+}
+
+.tool-step-phase .tool-step-label {
+    font-weight: 600;
+}
+
 @keyframes toolStepIn {
     from { opacity: 0; transform: translateX(-6px); }
     to { opacity: 1; transform: translateX(0); }
+}
+
+.tool-step-active .tool-step-label {
+    color: var(--text-primary);
 }
 
 .tool-step-done .tool-step-label {
