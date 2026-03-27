@@ -13,10 +13,11 @@ const MAX_STDIO_BYTES = 32_000;
 
 const STANDARD_TOOL_INSTRUCTION = 'You have access to a web_search tool for up-to-date internet information. Use it whenever the user asks for current, recent, breaking, latest, live, or web-specific facts. After using the tool, answer using the returned results and mention sources when useful.';
 const AGENT_TOOL_INSTRUCTION = [
-  'You are an autonomous task-solving agent.',
-  'Plan your work in small steps, use tools iteratively, inspect the results, then decide the next step until the task is complete or you are blocked.',
+  'You are an Autonomous Researcher.',
+  'Work step by step, use tools iteratively, inspect evidence carefully, and adapt the plan when the evidence changes.',
   'Prefer file_manager for reading and editing workspace files, execute_shell for safe project-local commands, python_interpreter for Python execution, and web_search for fresh internet information.',
   'All shell and file operations are sandboxed to the project workspace. If a tool fails, adapt and continue when possible.',
+  'During tool-using turns, keep assistant content minimal and avoid long final-style prose until you are ready to answer.',
   'When enough evidence is gathered, stop using tools and provide the final answer.'
 ].join(' ');
 const AGENT_PLAN_INSTRUCTION = [
@@ -26,6 +27,14 @@ const AGENT_PLAN_INSTRUCTION = [
   'Keep each title short, specific, and action-oriented.',
   'Use pending as the initial status for every step.',
   'Do not call tools, do not add markdown, and do not include explanation.'
+].join(' ');
+const AGENT_STEP_INSTRUCTION = [
+  'Review the task, current plan, and recent tool observations.',
+  'Return ONLY a JSON object with keys "thought" and "plan".',
+  '"thought" must be one short progress sentence about the next concrete action or latest finding.',
+  '"plan" must be an updated array of 3 to 5 step objects with a short title and optional status.',
+  'Revise the remaining plan when new evidence makes the old plan less relevant.',
+  'Do not add markdown, code fences, or extra explanation.'
 ].join(' ');
 
 const WEB_SEARCH_TOOL = {
@@ -301,11 +310,27 @@ function createAgentEventEnvelope(phase, status, iteration) {
   });
 }
 
-function createPlanEventEnvelope(planArray, iteration) {
+function createPlanEventEnvelope(planArray, iteration, options = {}) {
   return toStreamEnvelope({
     agent_event: {
       type: 'plan-update',
       plan: normalizePlanArray(planArray),
+      ...(Number.isFinite(iteration) ? { iteration } : {}),
+      ...(options.revised ? { revised: true } : {})
+    }
+  });
+}
+
+function createNarrationEventEnvelope(text, iteration) {
+  const narration = normalizeNarrationText(text);
+  if (!narration) {
+    return '';
+  }
+
+  return toStreamEnvelope({
+    agent_event: {
+      type: 'narration',
+      text: narration,
       ...(Number.isFinite(iteration) ? { iteration } : {})
     }
   });
@@ -321,6 +346,10 @@ function normalizePlanStatus(status, fallback = 'pending') {
 
 function normalizePlanTitle(title) {
   return String(title || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeNarrationText(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
 }
 
 function isPlanTitleValid(title) {
@@ -555,6 +584,124 @@ function extractJsonArray(rawText) {
   return null;
 }
 
+function extractJsonObject(rawText) {
+  const text = String(rawText || '');
+  if (!text.trim()) {
+    return null;
+  }
+
+  let startIndex = -1;
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (startIndex === -1) {
+      if (char === '{') {
+        startIndex = index;
+        depth = 1;
+        inString = false;
+        escapeNext = false;
+      }
+      continue;
+    }
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        const candidate = text.slice(startIndex, index + 1).trim();
+        try {
+          const parsed = JSON.parse(candidate);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            return parsed;
+          }
+        } catch {
+          startIndex = -1;
+          depth = 0;
+          inString = false;
+          escapeNext = false;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function summarizeToolResult(parsedResult) {
+  if (!parsedResult || typeof parsedResult !== 'object') {
+    return '';
+  }
+  if (parsedResult.error) {
+    return `error: ${String(parsedResult.error).slice(0, 160)}`;
+  }
+  if (typeof parsedResult.stdout === 'string' && parsedResult.stdout.trim()) {
+    return parsedResult.stdout.trim().slice(0, 160);
+  }
+  if (typeof parsedResult.content === 'string' && parsedResult.content.trim()) {
+    return parsedResult.content.trim().slice(0, 160);
+  }
+  if (typeof parsedResult.output === 'string' && parsedResult.output.trim()) {
+    return parsedResult.output.trim().slice(0, 160);
+  }
+  if (typeof parsedResult.result === 'string' && parsedResult.result.trim()) {
+    return parsedResult.result.trim().slice(0, 160);
+  }
+  if (Array.isArray(parsedResult.results)) {
+    return `${parsedResult.results.length} result(s)`;
+  }
+  if (Array.isArray(parsedResult.entries)) {
+    return `${parsedResult.entries.length} entr${parsedResult.entries.length === 1 ? 'y' : 'ies'}`;
+  }
+  if (typeof parsedResult.action === 'string' && parsedResult.action) {
+    return parsedResult.path ? `${parsedResult.action} ${parsedResult.path}` : parsedResult.action;
+  }
+  return '';
+}
+
+function collectRecentToolObservations(messages = [], limit = 3) {
+  const observations = [];
+  for (let index = messages.length - 1; index >= 0 && observations.length < limit; index -= 1) {
+    const message = messages[index];
+    if (message?.role !== 'tool') {
+      continue;
+    }
+
+    const parsed = parseToolArguments(message.content);
+    observations.unshift({
+      tool: message.tool_name || message.name || 'tool',
+      summary: summarizeToolResult(parsed)
+    });
+  }
+  return observations;
+}
+
 function buildAgentPlanMessages(messages = []) {
   const lastUserMessage = getLastUserMessageText(messages) || 'Help solve the latest user request.';
   return [
@@ -562,6 +709,63 @@ function buildAgentPlanMessages(messages = []) {
     { role: 'system', content: AGENT_PLAN_INSTRUCTION },
     { role: 'user', content: lastUserMessage }
   ];
+}
+
+function buildAgentStepMessages(messages = [], currentPlan = []) {
+  const lastUserMessage = getLastUserMessageText(messages) || 'Help solve the latest user request.';
+  const recentObservations = collectRecentToolObservations(messages);
+  return [
+    { role: 'system', content: AGENT_TOOL_INSTRUCTION },
+    { role: 'system', content: AGENT_STEP_INSTRUCTION },
+    { role: 'user', content: lastUserMessage },
+    { role: 'system', content: `Current plan: ${JSON.stringify(normalizePlanArray(currentPlan))}` },
+    { role: 'system', content: `Recent observations: ${JSON.stringify(recentObservations)}` }
+  ];
+}
+
+function planTitleKey(title) {
+  return normalizePlanTitle(title).toLowerCase();
+}
+
+function plansEquivalentByTitle(leftPlan = [], rightPlan = []) {
+  const leftKeys = normalizePlanArray(leftPlan).map((step) => planTitleKey(step.title));
+  const rightKeys = normalizePlanArray(rightPlan).map((step) => planTitleKey(step.title));
+  return JSON.stringify(leftKeys) === JSON.stringify(rightKeys);
+}
+
+function mergeRevisedPlan(currentPlan = [], proposedPlan = []) {
+  const normalizedCurrentPlan = clonePlanArray(currentPlan);
+  const normalizedProposedPlan = normalizePlanArray(proposedPlan);
+  if (!normalizedProposedPlan.length) {
+    return ensurePlanHasActiveStep(normalizedCurrentPlan);
+  }
+
+  const completedSteps = normalizedCurrentPlan
+    .filter((step) => step.status === 'done')
+    .map((step) => ({ ...step, status: 'done' }));
+  const completedKeys = new Set(completedSteps.map((step) => planTitleKey(step.title)));
+  const remainingSteps = normalizedProposedPlan
+    .filter((step) => !completedKeys.has(planTitleKey(step.title)))
+    .map((step) => ({ ...step, status: 'pending' }));
+
+  const mergedPlan = [...completedSteps, ...remainingSteps];
+  if (!mergedPlan.length) {
+    return ensurePlanHasActiveStep(normalizedCurrentPlan);
+  }
+
+  return ensurePlanHasActiveStep(mergedPlan);
+}
+
+function buildFallbackThought(currentPlan = []) {
+  const normalizedPlan = ensurePlanHasActiveStep(currentPlan);
+  const activeStep = normalizedPlan.find((step) => step.status === 'active')
+    || normalizedPlan.find((step) => step.status === 'pending');
+
+  if (activeStep?.title) {
+    return `Working on: ${activeStep.title}.`;
+  }
+
+  return 'Reviewing the next step before using a tool.';
 }
 
 async function generateAgentPlan(payload, env) {
@@ -578,6 +782,26 @@ async function generateAgentPlan(payload, env) {
   const responseState = await consumeJson(upstream);
   const parsedPlan = extractJsonArray(responseState.content);
   return ensurePlanHasActiveStep(finalizePlanArray(parsedPlan, payload.messages));
+}
+
+async function generateAgentStep(messages, currentPlan, payload, env) {
+  const stepPayload = {
+    model: payload.model,
+    messages: buildAgentStepMessages(messages, currentPlan),
+    stream: false,
+    ...(payload.options ? { options: payload.options } : {}),
+    ...(payload.keep_alive ? { keep_alive: payload.keep_alive } : {}),
+    ...(payload.think !== undefined ? { think: false } : {})
+  };
+
+  const upstream = await callOllama(stepPayload, env.OLLAMA_API_KEY);
+  const responseState = await consumeJson(upstream);
+  const parsed = extractJsonObject(responseState.content) || {};
+  const thought = normalizeNarrationText(parsed.thought) || buildFallbackThought(currentPlan);
+  return {
+    thought,
+    plan: normalizePlanArray(parsed.plan)
+  };
 }
 
 function resolveWorkspaceRoot(env) {
@@ -1097,6 +1321,7 @@ async function* createChatStream(payload, env, options = {}) {
     toolProfile
   });
   let currentPlan = [];
+  let lastNarration = '';
 
   if (isAgentProfile) {
     try {
@@ -1112,9 +1337,34 @@ async function* createChatStream(payload, env, options = {}) {
 
   for (let step = 0; step < MAX_TOOL_ITERATIONS; step += 1) {
     const iteration = step + 1;
-    if (isAgentProfile && currentPlan.length && iteration > 1) {
+
+    if (isAgentProfile && currentPlan.length) {
       currentPlan = ensurePlanHasActiveStep(currentPlan);
-      yield createPlanEventEnvelope(currentPlan, iteration);
+
+      try {
+        const stepContext = await generateAgentStep(messages, currentPlan, payload, env);
+        if (stepContext.thought && stepContext.thought !== lastNarration) {
+          const narrationEvent = createNarrationEventEnvelope(stepContext.thought, iteration);
+          if (narrationEvent) {
+            yield narrationEvent;
+            lastNarration = stepContext.thought;
+          }
+        }
+
+        if (stepContext.plan.length) {
+          const revisedPlan = mergeRevisedPlan(currentPlan, stepContext.plan);
+          if (!plansEquivalentByTitle(currentPlan, revisedPlan)) {
+            currentPlan = revisedPlan;
+            yield createPlanEventEnvelope(currentPlan, iteration, { revised: true });
+          }
+        }
+      } catch {
+        // Do not block the main tool loop if the narration step fails.
+      }
+
+      if (iteration > 1) {
+        yield createPlanEventEnvelope(currentPlan, iteration);
+      }
     }
 
     const upstreamPayload = {

@@ -2684,6 +2684,71 @@ ${safeCode}
             .slice(0, 5);
     }
 
+    function normalizeNarrationText(text) {
+        return String(text || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 600);
+    }
+
+    function trimTimelineText(value, maxLength = 320) {
+        const text = String(value || '').trim();
+        if (!text) return '';
+        return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+    }
+
+    function createTimelineId(prefix = 'agent') {
+        return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    }
+
+    function plansEquivalentByTitle(leftPlan = [], rightPlan = []) {
+        const leftTitles = normalizePlanItems(leftPlan).map((step) => step.title.toLowerCase());
+        const rightTitles = normalizePlanItems(rightPlan).map((step) => step.title.toLowerCase());
+        return JSON.stringify(leftTitles) === JSON.stringify(rightTitles);
+    }
+
+    function normalizeTimelineResult(result) {
+        if (Array.isArray(result)) {
+            return result.slice(0, 8).map((item) => {
+                if (!item || typeof item !== 'object') {
+                    return trimTimelineText(item, 160);
+                }
+
+                return {
+                    title: trimTimelineText(item.title, 140),
+                    url: trimTimelineText(item.url, 220),
+                    content: trimTimelineText(item.content, 220)
+                };
+            });
+        }
+
+        if (typeof result === 'string') {
+            return trimTimelineText(result, 600);
+        }
+
+        if (result && typeof result === 'object') {
+            const normalized = {};
+            [
+                'action',
+                'path',
+                'command',
+                'error',
+                'result',
+                'output',
+                'stdout',
+                'content',
+                'local'
+            ].forEach((key) => {
+                if (typeof result[key] === 'string' && result[key].trim()) {
+                    normalized[key] = trimTimelineText(result[key], 240);
+                }
+            });
+            return Object.keys(normalized).length ? normalized : null;
+        }
+
+        return result ?? null;
+    }
+
     function parseJsonMaybe(raw, fallback = {}) {
         if (!raw) return fallback;
         if (typeof raw === 'object') return raw;
@@ -2735,6 +2800,7 @@ ${safeCode}
         if (!toolActivityMap.has(messageDiv)) {
             toolActivityMap.set(messageDiv, {
                 steps: [],
+                timeline: [],
                 expanded: false,
                 plan: [],
                 iteration: 0
@@ -2743,36 +2809,250 @@ ${safeCode}
         return toolActivityMap.get(messageDiv);
     }
 
+    function syncTimelineToolStep(state, step) {
+        const existing = state.timeline.find((item) => item.type === 'tool' && item.id === step.id);
+        if (existing) {
+            existing.toolName = step.toolName;
+            existing.query = step.query;
+            existing.status = step.status;
+            existing.result = normalizeTimelineResult(step.result);
+            existing.iteration = step.iteration || existing.iteration || 0;
+            return existing;
+        }
+
+        const timelineEntry = {
+            id: step.id,
+            type: 'tool',
+            toolName: step.toolName,
+            query: step.query,
+            status: step.status,
+            result: normalizeTimelineResult(step.result),
+            iteration: step.iteration || 0
+        };
+        state.timeline.push(timelineEntry);
+        return timelineEntry;
+    }
+
+    function recordAgentNarration(messageDiv, text, options = {}) {
+        const narration = normalizeNarrationText(text);
+        if (!narration) return;
+
+        const state = getToolActivityState(messageDiv);
+        if (typeof options.iteration === 'number' && Number.isFinite(options.iteration)) {
+            state.iteration = Math.max(state.iteration, options.iteration);
+        }
+
+        const lastNarration = [...state.timeline].reverse().find((item) => item.type === 'narration');
+        if (lastNarration?.text === narration) return;
+
+        state.timeline.push({
+            id: createTimelineId('narration'),
+            type: 'narration',
+            text: narration,
+            iteration: state.iteration || 0
+        });
+    }
+
+    function buildPlanTimelineEntry(plan, options = {}) {
+        const normalizedPlan = normalizePlanItems(plan);
+        if (!normalizedPlan.length) return null;
+        return {
+            id: createTimelineId('plan'),
+            type: 'plan',
+            text: options.revised
+                ? 'Updated the task plan to match the latest findings.'
+                : 'Created a short task plan before acting.',
+            revised: Boolean(options.revised),
+            iteration: Number.isFinite(options.iteration) ? options.iteration : 0,
+            plan: normalizedPlan.map((step) => ({ ...step }))
+        };
+    }
+
+    function recordPlanUpdate(messageDiv, plan, options = {}) {
+        const state = getToolActivityState(messageDiv);
+        const normalizedPlan = normalizePlanItems(plan);
+        if (!normalizedPlan.length) return;
+
+        if (typeof options.iteration === 'number' && Number.isFinite(options.iteration)) {
+            state.iteration = Math.max(state.iteration, options.iteration);
+        }
+
+        const hadPlan = Array.isArray(state.plan) && state.plan.length > 0;
+        const titlesChanged = !plansEquivalentByTitle(state.plan, normalizedPlan);
+        state.plan = normalizedPlan;
+
+        const lastPlanEntry = [...state.timeline].reverse().find((item) => item.type === 'plan');
+
+        if (!hadPlan || titlesChanged || options.revised || !lastPlanEntry) {
+            const timelineEntry = buildPlanTimelineEntry(normalizedPlan, options);
+            if (!timelineEntry) return;
+            state.timeline.push(timelineEntry);
+            return;
+        }
+
+        lastPlanEntry.plan = normalizedPlan.map((step) => ({ ...step }));
+        lastPlanEntry.iteration = state.iteration || lastPlanEntry.iteration || 0;
+    }
+
+    function serializeAgentTimeline(messageDiv) {
+        const state = messageDiv ? toolActivityMap.get(messageDiv) : null;
+        if (!state || !Array.isArray(state.timeline)) return [];
+
+        return state.timeline
+            .map((item) => {
+                if (item?.type === 'narration') {
+                    const text = normalizeNarrationText(item.text);
+                    if (!text) return null;
+                    return {
+                        id: String(item.id || createTimelineId('narration')),
+                        type: 'narration',
+                        text,
+                        iteration: Number.isFinite(item.iteration) ? item.iteration : 0
+                    };
+                }
+
+                if (item?.type === 'plan') {
+                    const plan = normalizePlanItems(item.plan);
+                    if (!plan.length) return null;
+                    return {
+                        id: String(item.id || createTimelineId('plan')),
+                        type: 'plan',
+                        text: normalizeNarrationText(item.text) || '',
+                        revised: Boolean(item.revised),
+                        iteration: Number.isFinite(item.iteration) ? item.iteration : 0,
+                        plan
+                    };
+                }
+
+                if (item?.type === 'tool') {
+                    const toolName = String(item.toolName || '').trim();
+                    if (!toolName) return null;
+                    return {
+                        id: String(item.id || createTimelineId('tool')),
+                        type: 'tool',
+                        toolName,
+                        query: String(item.query || ''),
+                        status: normalizePlanStatus(item.status),
+                        iteration: Number.isFinite(item.iteration) ? item.iteration : 0,
+                        result: normalizeTimelineResult(item.result)
+                    };
+                }
+
+                return null;
+            })
+            .filter(Boolean);
+    }
+
+    function hydrateAgentTimeline(messageDiv, agentTimeline = []) {
+        const state = getToolActivityState(messageDiv);
+        state.steps = [];
+        state.timeline = [];
+        state.plan = [];
+        state.iteration = 0;
+
+        if (!Array.isArray(agentTimeline) || !agentTimeline.length) {
+            renderToolActivityUI(messageDiv);
+            return;
+        }
+
+        agentTimeline.forEach((entry, index) => {
+            const type = String(entry?.type || '').toLowerCase();
+            const iteration = Number.isFinite(entry?.iteration) ? entry.iteration : 0;
+            state.iteration = Math.max(state.iteration, iteration);
+
+            if (type === 'narration') {
+                const text = normalizeNarrationText(entry.text);
+                if (!text) return;
+                state.timeline.push({
+                    id: String(entry.id || `narration-${index}`),
+                    type: 'narration',
+                    text,
+                    iteration
+                });
+                return;
+            }
+
+            if (type === 'plan') {
+                const normalizedPlan = normalizePlanItems(entry.plan);
+                if (!normalizedPlan.length) return;
+                state.plan = normalizedPlan;
+                state.timeline.push({
+                    id: String(entry.id || `plan-${index}`),
+                    type: 'plan',
+                    text: normalizeNarrationText(entry.text)
+                        || (entry.revised ? 'Updated the task plan to match the latest findings.' : 'Created a short task plan before acting.'),
+                    revised: Boolean(entry.revised),
+                    iteration,
+                    plan: normalizedPlan.map((step) => ({ ...step }))
+                });
+                return;
+            }
+
+            if (type === 'tool') {
+                const toolName = String(entry.toolName || '').trim();
+                if (!toolName) return;
+                const step = {
+                    id: String(entry.id || `tool-${index}`),
+                    toolName,
+                    query: String(entry.query || ''),
+                    status: normalizePlanStatus(entry.status),
+                    result: normalizeTimelineResult(entry.result),
+                    iteration
+                };
+                state.steps.push({ ...step });
+                state.timeline.push({
+                    id: step.id,
+                    type: 'tool',
+                    toolName: step.toolName,
+                    query: step.query,
+                    status: step.status,
+                    result: step.result,
+                    iteration: step.iteration
+                });
+            }
+        });
+
+        renderToolActivityUI(messageDiv);
+    }
+
     function pushToolStep(messageDiv, toolName, query = '') {
         const state = getToolActivityState(messageDiv);
         const existing = state.steps.find(step => step.toolName === toolName && step.status === 'pending' && step.query === query);
         if (existing) return;
-        state.steps.push({
+
+        const step = {
             toolName,
             query,
             status: 'pending',
             result: null,
-            id: `${toolName}-${Date.now()}`
-        });
+            id: createTimelineId(toolName || 'tool'),
+            iteration: state.iteration || 0
+        };
+        state.steps.push(step);
+        syncTimelineToolStep(state, step);
         renderToolActivityUI(messageDiv);
     }
 
     function resolveToolStep(messageDiv, toolName, query = '', result = null, error = false) {
         const state = getToolActivityState(messageDiv);
-        const step = state.steps.find(step => step.toolName === toolName && step.status === 'pending');
+        let step = state.steps.find(step => step.toolName === toolName && step.status === 'pending');
         if (step) {
             step.status = error ? 'error' : 'done';
-            step.result = result;
+            step.result = normalizeTimelineResult(result);
             step.query = query || step.query;
+            step.iteration = step.iteration || state.iteration || 0;
         } else {
-            state.steps.push({
+            step = {
                 toolName,
                 query,
                 status: error ? 'error' : 'done',
-                result,
-                id: `${toolName}-${Date.now()}`
-            });
+                result: normalizeTimelineResult(result),
+                id: createTimelineId(toolName || 'tool'),
+                iteration: state.iteration || 0
+            };
+            state.steps.push(step);
         }
+        syncTimelineToolStep(state, step);
         renderToolActivityUI(messageDiv);
     }
 
@@ -2786,7 +3066,18 @@ ${safeCode}
         }
 
         if (eventType === 'plan-update') {
-            state.plan = normalizePlanItems(event.plan);
+            recordPlanUpdate(messageDiv, event.plan, {
+                iteration: event.iteration,
+                revised: Boolean(event.revised)
+            });
+            renderToolActivityUI(messageDiv);
+            return;
+        }
+
+        if (eventType === 'narration') {
+            recordAgentNarration(messageDiv, event.text, {
+                iteration: event.iteration
+            });
             renderToolActivityUI(messageDiv);
         }
     }
@@ -2797,17 +3088,82 @@ ${safeCode}
         return activeStep?.title || '';
     }
 
+    function getToolUiMeta(step = {}) {
+        return TOOL_META[step.toolName] || {
+            icon: 'ph-gear',
+            label: step.toolName || 'Tool',
+            pendingText: () => `Using ${step.toolName || 'tool'}...`,
+            doneText: () => `Used ${step.toolName || 'tool'}`,
+            color: '#94A3B8'
+        };
+    }
+
+    function createToolStatusIcon(step, meta) {
+        const iconWrap = document.createElement('span');
+        iconWrap.className = 'tool-step-icon';
+        iconWrap.style.setProperty('--tool-color', meta.color);
+
+        if (step.status === 'pending' || step.status === 'active') {
+            iconWrap.innerHTML = '<span class="tool-step-spinner"></span>';
+        } else if (step.status === 'done') {
+            iconWrap.innerHTML = `<i class="ph ph-check-circle" style="color: ${meta.color}"></i>`;
+        } else {
+            iconWrap.innerHTML = '<i class="ph ph-x-circle" style="color: #ef4444"></i>';
+        }
+
+        return iconWrap;
+    }
+
+    function getToolTimelineCopy(step, meta) {
+        if (step.status === 'pending' || step.status === 'active') {
+            return meta.pendingText(step.query);
+        }
+        return meta.doneText(step.query, step.result);
+    }
+
+    function renderFallbackToolSteps(parent, steps = []) {
+        if (!steps.length) return;
+
+        const stepsContainer = document.createElement('div');
+        stepsContainer.className = 'tool-steps';
+
+        steps.forEach((step) => {
+            const meta = getToolUiMeta(step);
+            const row = document.createElement('div');
+            row.className = `tool-step tool-step-${step.status}`;
+            row.dataset.toolName = step.toolName;
+
+            const iconWrap = createToolStatusIcon(step, meta);
+            const label = document.createElement('span');
+            label.className = 'tool-step-label';
+            label.textContent = getToolTimelineCopy(step, meta);
+
+            if (step.status === 'pending' || step.status === 'active') {
+                label.classList.add('is-pending');
+            }
+
+            row.appendChild(iconWrap);
+            row.appendChild(label);
+            stepsContainer.appendChild(row);
+        });
+
+        parent.appendChild(stepsContainer);
+    }
+
     function renderToolActivityUI(messageDiv) {
         if (!messageDiv) return;
         const activity = messageDiv.querySelector('.tool-activity');
         if (!activity) return;
         const state = getToolActivityState(messageDiv);
         const hasPlan = Array.isArray(state.plan) && state.plan.length > 0;
+        const hasTimeline = Array.isArray(state.timeline) && state.timeline.length > 0;
+        const hasSteps = Array.isArray(state.steps) && state.steps.length > 0;
 
-        if (!state.steps.length && !hasPlan) {
+        if (!hasPlan && !hasTimeline && !hasSteps) {
             activity.hidden = true;
             return;
         }
+
         activity.hidden = false;
         activity.innerHTML = '';
         activity.className = 'tool-activity tool-activity-v2';
@@ -2854,59 +3210,74 @@ ${safeCode}
             activity.appendChild(planContainer);
         }
 
-        if (state.steps.length) {
+        if (hasTimeline) {
+            const progressTitle = document.createElement('div');
+            progressTitle.className = 'tool-activity-section-title';
+            progressTitle.textContent = 'Agent Progress';
+            activity.appendChild(progressTitle);
+
+            const timelineContainer = document.createElement('div');
+            timelineContainer.className = 'agent-timeline';
+
+            state.timeline.forEach((item) => {
+                const row = document.createElement('div');
+                row.className = `agent-timeline-item agent-timeline-${item.type}`;
+
+                const badge = document.createElement('span');
+                badge.className = 'agent-timeline-badge';
+
+                const body = document.createElement('div');
+                body.className = 'agent-timeline-body';
+
+                const label = document.createElement('div');
+                label.className = 'agent-timeline-label';
+
+                const copy = document.createElement('div');
+                copy.className = 'agent-timeline-copy';
+
+                if (item.type === 'narration') {
+                    badge.innerHTML = '<i class="ph ph-lightbulb-filament"></i>';
+                    label.textContent = 'Agent note';
+                    copy.textContent = item.text;
+                } else if (item.type === 'plan') {
+                    row.classList.toggle('is-revised', Boolean(item.revised));
+                    badge.innerHTML = item.revised
+                        ? '<i class="ph ph-arrows-clockwise"></i>'
+                        : '<i class="ph ph-list-checks"></i>';
+                    label.textContent = item.revised ? 'Plan updated' : 'Plan created';
+                    copy.textContent = item.text || (item.revised
+                        ? 'Updated the task plan to match the latest findings.'
+                        : 'Created a short task plan before acting.');
+                } else if (item.type === 'tool') {
+                    const meta = getToolUiMeta(item);
+                    row.classList.add(`is-${normalizePlanStatus(item.status)}`);
+                    badge.appendChild(createToolStatusIcon(item, meta));
+                    label.textContent = meta.label;
+                    copy.textContent = getToolTimelineCopy(item, meta);
+                    if (item.status === 'pending' || item.status === 'active') {
+                        copy.classList.add('is-pending');
+                    }
+                } else {
+                    return;
+                }
+
+                body.appendChild(label);
+                body.appendChild(copy);
+                row.appendChild(badge);
+                row.appendChild(body);
+                timelineContainer.appendChild(row);
+            });
+
+            activity.appendChild(timelineContainer);
+        } else if (hasSteps) {
             const actionTitle = document.createElement('div');
             actionTitle.className = 'tool-activity-section-title';
             actionTitle.textContent = hasPlan ? 'Agent Actions' : 'Tool Activity';
             activity.appendChild(actionTitle);
+            renderFallbackToolSteps(activity, state.steps);
         }
 
-        const stepsContainer = document.createElement('div');
-        stepsContainer.className = 'tool-steps';
-
-        state.steps.forEach(step => {
-            const meta = TOOL_META[step.toolName] || {
-                icon: 'ph-gear',
-                label: step.toolName,
-                pendingText: () => `Using ${step.toolName}…`,
-                doneText: () => `Used ${step.toolName}`,
-                color: '#94A3B8'
-            };
-
-            const row = document.createElement('div');
-            row.className = `tool-step tool-step-${step.status}`;
-            row.dataset.toolName = step.toolName;
-
-            const iconWrap = document.createElement('span');
-            iconWrap.className = 'tool-step-icon';
-            iconWrap.style.setProperty('--tool-color', meta.color);
-
-            if (step.status === 'pending') {
-                iconWrap.innerHTML = '<span class="tool-step-spinner"></span>';
-            } else if (step.status === 'done') {
-                iconWrap.innerHTML = `<i class="ph ph-check-circle" style="color: ${meta.color}"></i>`;
-            } else {
-                iconWrap.innerHTML = '<i class="ph ph-x-circle" style="color: #ef4444"></i>';
-            }
-
-            const label = document.createElement('span');
-            label.className = 'tool-step-label';
-
-            if (step.status === 'pending') {
-                label.textContent = meta.pendingText(step.query);
-                label.classList.add('is-pending');
-            } else {
-                label.textContent = meta.doneText(step.query, step.result);
-            }
-
-            row.appendChild(iconWrap);
-            row.appendChild(label);
-            stepsContainer.appendChild(row);
-        });
-
-        activity.appendChild(stepsContainer);
-
-        const webSearchStep = state.steps.find(step => step.toolName === 'web_search' && step.status === 'done' && step.result?.length);
+        const webSearchStep = state.steps.find((step) => step.toolName === 'web_search' && step.status === 'done' && Array.isArray(step.result) && step.result.length);
         if (webSearchStep) {
             const sourcesWrap = document.createElement('div');
             sourcesWrap.className = 'tool-sources-wrap';
@@ -2924,7 +3295,7 @@ ${safeCode}
             if (state.expanded) {
                 const row = document.createElement('div');
                 row.className = 'sources-row';
-                webSearchStep.result.forEach(source => {
+                webSearchStep.result.forEach((source) => {
                     const domain = extractDomain(source.url || '');
                     const card = document.createElement('a');
                     card.className = 'source-card';
@@ -3097,7 +3468,7 @@ ${safeCode}
 
     function updateToolActivity(messageDiv, text, count = 0, options = {}) {
         const state = messageDiv ? toolActivityMap.get(messageDiv) : null;
-        if (state && state.steps.length) {
+        if (state && (state.steps.length || state.timeline?.length || state.plan.length)) {
             renderToolActivityUI(messageDiv);
             return;
         }
@@ -4589,6 +4960,7 @@ Always prefer these tools over guessing answers when they apply.`;
         const finalizeAssistantMessage = ({ aborted } = {}) => {
             if (didFinalize) return;
             didFinalize = true;
+            const agentTimeline = serializeAgentTimeline(assistantMessage);
 
             updateAssistantMessageState(assistantMessage, {
                 content: fullReply,
@@ -4606,7 +4978,8 @@ Always prefer these tools over guessing answers when they apply.`;
                 role: 'assistant',
                 content: fullReply,
                 thinking: enableThinking ? fullThinking : '',
-                modelMeta: selectedModelMeta
+                modelMeta: selectedModelMeta,
+                ...(agentTimeline.length ? { agentTimeline } : {})
             });
             saveCurrentChat();
             if (assistantMessage.dataset.webSearchUsed === 'true') {
@@ -5546,6 +5919,10 @@ Always prefer these tools over guessing answers when they apply.`;
                 messageDiv.dataset.finalized = 'false';
             }
             messagesContainer.appendChild(messageDiv);
+
+            if (Array.isArray(messageData.agentTimeline) && messageData.agentTimeline.length) {
+                hydrateAgentTimeline(messageDiv, messageData.agentTimeline);
+            }
 
             updateAssistantMessageState(messageDiv, {
                 content,
