@@ -2647,6 +2647,25 @@ ${safeCode}
         return 'pending';
     }
 
+    function isPlanTitleVisible(title) {
+        const normalized = String(title || '').trim().toLowerCase();
+        if (!normalized) return false;
+        const blockedPhrases = [
+            'return only',
+            'json only',
+            'json array',
+            'return the execution plan',
+            'do not call tools',
+            'do not add markdown',
+            'do not include explanation',
+            'autonomous task-solving agent',
+            'plan your work in small steps',
+            'pending as the initial status',
+            'when enough evidence is gathered'
+        ];
+        return !blockedPhrases.some((phrase) => normalized.includes(phrase));
+    }
+
     function normalizePlanItems(plan) {
         if (!Array.isArray(plan)) return [];
         return plan
@@ -2654,14 +2673,15 @@ ${safeCode}
                 const title = typeof item === 'string'
                     ? item.trim()
                     : String(item?.title || '').trim();
-                if (!title) return null;
+                if (!title || !isPlanTitleVisible(title)) return null;
                 return {
                     id: typeof item === 'object' && item?.id ? String(item.id) : `plan-step-${index}`,
                     title,
                     status: normalizePlanStatus(typeof item === 'object' ? item?.status : 'pending')
                 };
             })
-            .filter(Boolean);
+            .filter(Boolean)
+            .slice(0, 5);
     }
 
     function parseJsonMaybe(raw, fallback = {}) {

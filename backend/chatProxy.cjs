@@ -323,6 +323,29 @@ function normalizePlanTitle(title) {
   return String(title || '').replace(/\s+/g, ' ').trim();
 }
 
+function isPlanTitleValid(title) {
+  const normalized = normalizePlanTitle(title).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  const blockedPhrases = [
+    'return only',
+    'json only',
+    'json array',
+    'return the execution plan',
+    'do not call tools',
+    'do not add markdown',
+    'do not include explanation',
+    'autonomous task-solving agent',
+    'plan your work in small steps',
+    'pending as the initial status',
+    'when enough evidence is gathered'
+  ];
+
+  return !blockedPhrases.some((phrase) => normalized.includes(phrase));
+}
+
 function normalizePlanArray(planArray) {
   if (!Array.isArray(planArray)) {
     return [];
@@ -332,7 +355,7 @@ function normalizePlanArray(planArray) {
     .map((step, index) => {
       const rawTitle = typeof step === 'string' ? step : step?.title;
       const title = normalizePlanTitle(rawTitle);
-      if (!title) {
+      if (!title || !isPlanTitleValid(title)) {
         return null;
       }
 
@@ -463,57 +486,88 @@ function didToolExecutionFail(toolMessages = []) {
 }
 
 function extractJsonArray(rawText) {
-  const text = String(rawText || '').trim();
-  if (!text) {
+  const text = String(rawText || '');
+  if (!text.trim()) {
     return null;
   }
 
-  try {
-    const parsed = JSON.parse(text);
-    if (Array.isArray(parsed)) {
-      return parsed;
-    }
-  } catch {
-    // Ignore and try lighter parsing below.
-  }
+  let startIndex = -1;
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
 
-  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fencedMatch) {
-    try {
-      const parsed = JSON.parse(fencedMatch[1]);
-      if (Array.isArray(parsed)) {
-        return parsed;
-      }
-    } catch {
-      // Ignore and try bracket extraction below.
-    }
-  }
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
 
-  const startIndex = text.indexOf('[');
-  const endIndex = text.lastIndexOf(']');
-  if (startIndex != -1 && endIndex > startIndex) {
-    try {
-      const parsed = JSON.parse(text.slice(startIndex, endIndex + 1));
-      if (Array.isArray(parsed)) {
-        return parsed;
+    if (startIndex === -1) {
+      if (char === '[') {
+        startIndex = index;
+        depth = 1;
+        inString = false;
+        escapeNext = false;
       }
-    } catch {
-      return null;
+      continue;
+    }
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) {
+      continue;
+    }
+
+    if (char === '[') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === ']') {
+      depth -= 1;
+      if (depth === 0) {
+        const candidate = text.slice(startIndex, index + 1).trim();
+        try {
+          const parsed = JSON.parse(candidate);
+          if (Array.isArray(parsed)) {
+            return parsed;
+          }
+        } catch {
+          startIndex = -1;
+          depth = 0;
+          inString = false;
+          escapeNext = false;
+        }
+      }
     }
   }
 
   return null;
 }
 
+function buildAgentPlanMessages(messages = []) {
+  const lastUserMessage = getLastUserMessageText(messages) || 'Help solve the latest user request.';
+  return [
+    { role: 'system', content: AGENT_TOOL_INSTRUCTION },
+    { role: 'system', content: AGENT_PLAN_INSTRUCTION },
+    { role: 'user', content: lastUserMessage }
+  ];
+}
+
 async function generateAgentPlan(payload, env) {
   const planningPayload = {
     model: payload.model,
-    messages: [
-      { role: 'system', content: AGENT_TOOL_INSTRUCTION },
-      { role: 'system', content: AGENT_PLAN_INSTRUCTION },
-      ...(Array.isArray(payload.messages) ? payload.messages : []),
-      { role: 'user', content: 'Return the execution plan now as JSON only.' }
-    ],
+    messages: buildAgentPlanMessages(payload.messages),
     stream: false,
     ...(payload.options ? { options: payload.options } : {}),
     ...(payload.keep_alive ? { keep_alive: payload.keep_alive } : {}),
@@ -1080,8 +1134,7 @@ async function* createChatStream(payload, env, options = {}) {
 
     for await (const line of iterateNdjsonLines(upstream.body)) {
       parseStreamLine(line, streamState);
-      yield `${line}
-`;
+      yield `${line}\n`;
     }
 
     messages = [
@@ -1110,9 +1163,12 @@ async function* createChatStream(payload, env, options = {}) {
     );
 
     let backendToolFailed = false;
+    let shouldAdvancePlan = false;
+
     if (backendToolCalls.length) {
       const toolMessages = await executeToolCalls(backendToolCalls, env);
       backendToolFailed = didToolExecutionFail(toolMessages);
+      shouldAdvancePlan = true;
       for (const toolMessage of toolMessages) {
         yield toStreamEnvelope(toolMessage);
       }
@@ -1120,15 +1176,19 @@ async function* createChatStream(payload, env, options = {}) {
     }
 
     if (frontendToolCalls.length) {
-      return;
+      shouldAdvancePlan = true;
     }
 
-    if (isAgentProfile && currentPlan.length) {
+    if (isAgentProfile && currentPlan.length && shouldAdvancePlan) {
       currentPlan = completeActivePlanStep(currentPlan, {
         activateNext: !backendToolFailed,
         error: backendToolFailed
       });
       yield createPlanEventEnvelope(currentPlan, iteration);
+    }
+
+    if (frontendToolCalls.length) {
+      return;
     }
   }
 

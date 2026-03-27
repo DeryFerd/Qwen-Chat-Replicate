@@ -1,0 +1,154 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - link "Qwen Qwen" [ref=e5] [cursor=pointer]:
+        - /url: "#"
+        - img "Qwen" [ref=e6]
+        - generic [ref=e7]: Qwen
+      - button " New Chat" [ref=e8] [cursor=pointer]:
+        - generic [ref=e9]: 
+        - generic [ref=e10]: New Chat
+      - generic [ref=e11]:
+        - generic [ref=e12]: 
+        - textbox "Search chats (Ctrl+K)" [ref=e13]:
+          - /placeholder: Search chats
+        - button "":
+          - generic: 
+      - generic [ref=e106]:
+        - heading "Today" [level=3] [ref=e107]
+        - list [ref=e108]:
+          - listitem [ref=e109]:
+            - link " Gunakan file_manager untuk membaca server.js dan" [ref=e110] [cursor=pointer]:
+              - /url: "#"
+              - generic [ref=e111]: 
+              - generic [ref=e113]: Gunakan file_manager untuk membaca server.js dan
+              - text: 
+      - generic [ref=e15]:
+        - button "U User" [ref=e16] [cursor=pointer]:
+          - generic [ref=e17]: U
+          - generic [ref=e18]: User
+        - button "" [ref=e19] [cursor=pointer]:
+          - generic [ref=e20]: 
+        - button "" [ref=e21] [cursor=pointer]:
+          - generic [ref=e22]: 
+        - button "" [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]: 
+    - main [ref=e25]:
+      - generic [ref=e26]:
+        - button "" [ref=e27] [cursor=pointer]:
+          - generic [ref=e28]: 
+        - generic [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]:
+            - img "Qwen" [ref=e32]
+            - generic [ref=e33]: Qwen3.5 397B
+          - generic [ref=e34]: 
+        - button " Share" [ref=e36] [cursor=pointer]:
+          - generic [ref=e37]: 
+          - generic [ref=e38]: Share
+      - generic [ref=e39]:
+        - text:    
+        - generic [ref=e91]:
+          - generic [ref=e92]:
+            - generic [ref=e93]: U
+            - generic [ref=e94]:
+              - generic [ref=e95]: Gunakan file_manager untuk membaca server.js dan backend/chatProxy.cjs, lalu jelaskan alur request chat dalam 3 poin singkat.
+              - button "" [ref=e97] [cursor=pointer]:
+                - generic [ref=e98]: 
+          - generic [ref=e99]:
+            - img "Qwen" [ref=e101]
+            - generic [ref=e102]:
+              - text:  
+              - generic [ref=e103]:
+                - generic [ref=e114]: Task Plan - Loop 2
+                - generic [ref=e115]:
+                  - generic [ref=e116]:
+                    - generic [ref=e118]: 
+                    - generic [ref=e119]: "Understand the request: Gunakan file_manager untuk membaca server.js dan backend/chatProxy.cjs,"
+                  - generic [ref=e120]:
+                    - generic [ref=e122]: 
+                    - generic [ref=e123]: Gather the needed context
+                  - generic [ref=e124]:
+                    - generic [ref=e126]: 
+                    - generic [ref=e127]: Use the right tools to make progress
+                  - generic [ref=e128]:
+                    - generic [ref=e130]: 
+                    - generic [ref=e131]: Verify the result and answer clearly
+                - generic [ref=e132]: Agent Actions
+                - generic [ref=e133]:
+                  - generic [ref=e134]:
+                    - generic [ref=e136]: 
+                    - generic [ref=e137]: "File: const http = require('node:http'); const fs = require('node:fs'); const"
+                  - generic [ref=e138]:
+                    - generic [ref=e140]: 
+                    - generic [ref=e141]: "File: const path = require('node:path'); const fs = require('node:fs/promises"
+              - generic [ref=e142]:
+                - paragraph [ref=e143]: "Berdasarkan pembacaan kedua file, berikut alur request chat dalam 3 poin singkat:"
+                - list [ref=e144]:
+                  - listitem [ref=e145]:
+                    - paragraph [ref=e146]:
+                      - strong [ref=e147]: Server menerima request
+                      - text: —
+                      - code [ref=e148]: server.js
+                      - text: menangani POST ke
+                      - code [ref=e149]: /api/chat
+                      - text: ", membaca body JSON dari client, lalu memanggil"
+                      - code [ref=e150]: handleChatPayload()
+                      - text: dari
+                      - code [ref=e151]: chatProxy.cjs
+                      - text: dengan payload dan environment variables.
+                  - listitem [ref=e152]:
+                    - paragraph [ref=e153]:
+                      - strong [ref=e154]: Proxy memproses & panggil Ollama
+                      - text: —
+                      - code [ref=e155]: chatProxy.cjs
+                      - text: validasi payload (harus ada
+                      - code [ref=e156]: messages
+                      - text: dan
+                      - code [ref=e157]: model
+                      - text: ), bangun daftar tools (web_search, file_manager, execute_shell, dll), lalu panggil Ollama Cloud API secara iteratif untuk handle tool calls hingga respons final.
+                  - listitem [ref=e158]:
+                    - paragraph [ref=e159]:
+                      - strong [ref=e160]: Response dikirim ke client
+                      - text: — Hasil dikembalikan sebagai JSON statis (
+                      - code [ref=e161]: "stream: false"
+                      - text: ) atau streaming NDJSON (
+                      - code [ref=e162]: "stream: true"
+                      - text: ), dengan event plan update untuk mode agent, lalu
+                      - code [ref=e163]: server.js
+                      - text: menulis response ke client.
+              - button "" [ref=e165] [cursor=pointer]:
+                - generic [ref=e166]: 
+      - generic [ref=e66]:
+        - generic [ref=e68]:
+          - button "" [ref=e69] [cursor=pointer]:
+            - generic [ref=e70]: 
+          - button "" [ref=e71] [cursor=pointer]:
+            - generic [ref=e72]: 
+          - button "" [ref=e73] [cursor=pointer]:
+            - generic [ref=e74]: 
+          - textbox "Message Qwen..." [active] [ref=e75]
+          - generic [ref=e76]:
+            - button "" [ref=e77] [cursor=pointer]:
+              - generic [ref=e78]: 
+            - button "" [disabled] [ref=e167]:
+              - generic [ref=e168]: 
+        - generic [ref=e81]: AI can make mistakes. Consider verifying important information.
+    - option "Auto" [selected]
+    - option "Bahasa Indonesia"
+    - option "English"
+  - generic:
+    - generic:
+      - generic: Artifact
+      - generic:
+        - button "":
+          - generic: 
+        - button "":
+          - generic: 
+        - button "":
+          - generic: 
+    - generic:
+      - button "Preview"
+      - button "Code"
+    - iframe [ref=e82]:
+      
+  - text:         
