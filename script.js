@@ -1580,7 +1580,7 @@ ${safeCode}
     const SUGGESTION_SETS = {
         coder: [
             { icon: 'ph-code', title: 'Generate code', desc: 'for a REST API endpoint' },
-            { icon: 'ph-bug', title: 'Debug error', desc: 'from stack trace or logs' },
+            { icon: 'ph-bug', title: 'Error Debugging', desc: 'from stack trace or logs' },
             { icon: 'ph-brackets-curly', title: 'Refactor code', desc: 'to improve performance' },
             { icon: 'ph-terminal', title: 'Explain code', desc: 'line by line in simple terms' }
         ],
